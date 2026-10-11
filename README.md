@@ -6,7 +6,7 @@ A desktop helper for Texas Hold'em. It starts with a pot odds calculator: enter 
 
 Go to **Releases** on the right side of this page and download the latest version:
 
-- **Windows:** `PokerHelper-windows.zip`. Unzip it and double-click `Poker Helper.exe`.
+- **Windows:** `PokerHelper-windows.zip`. Unzip it, open the `Poker Helper` folder, and double-click `Poker Helper.exe`. Keep the `_internal` folder next to it; the app needs it.
 - **Mac:** `PokerHelper-mac.zip`. Unzip it and drag `Poker Helper` into Applications.
 
 You don't need to install Python or anything else.
@@ -51,3 +51,17 @@ pip install pytest && pytest -q   # run the tests
 ```
 
 **Releasing:** in the Actions tab, open **build**, click **Run workflow**, and enter a version such as `v0.2.0`. You can also push a tag with that name. Either way, GitHub Actions runs the tests, builds the Windows and Mac apps with PyInstaller, and attaches both zips to a release. Every push to `main` also builds them, and you can download those builds from the Actions run.
+
+## Code signing policy
+
+The Windows app is being set up for free code signing through [SignPath Foundation](https://signpath.org). Until that is approved, releases are unsigned (see **First launch** above). Once approved: free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org).
+
+- **Committers and approvers:** [@brignano](https://github.com/brignano)
+- Every release is built from this repository by GitHub Actions (`.github/workflows/build.yml`). Nothing built on a personal computer is signed.
+- Each signing request is approved by hand by an approver.
+
+**Privacy:** this program will not transfer any information to other networked systems unless specifically requested by the user or the person installing or operating it. It makes no network connections at all.
+
+## License
+
+[MIT](LICENSE)

@@ -44,12 +44,15 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install pyinstaller
-      - run: pyinstaller --windowed --onefile --name "Poker Helper" pot_odds.py
+      # --onedir, not --onefile: a one-file exe unpacks itself into a temp folder
+      # at launch, which antivirus tools often mistake for malware.
+      - run: pyinstaller --windowed --onedir --name "Poker Helper" pot_odds.py
 
       - name: Package (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
-        run: Compress-Archive -Path "dist/Poker Helper.exe" -DestinationPath "${{ matrix.asset }}"
+        # Zip the whole folder: the exe needs the _internal folder next to it.
+        run: Compress-Archive -Path "dist/Poker Helper" -DestinationPath "${{ matrix.asset }}"
 
       - name: Package (macOS)
         if: runner.os == 'macOS'
