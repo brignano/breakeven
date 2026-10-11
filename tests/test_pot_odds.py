@@ -59,9 +59,26 @@ def test_next_card_highlights():
     assert len(eq) == 47 and not set(eq) & set(hole + board)
     assert eq[p("Th")[0]] == 1.0                                  # royal flush
     current = simulate_equity(hole, board, 1, 3000, rng)
-    outs, helps = classify_next_cards(eq, current, 1 / 3)
+    outs, helps, dangers = classify_next_cards(eq, current, 1 / 3)
     hearts = {c for c in p("2h 3h 4h 5h 6h 7h 8h 9h Th")}
     assert hearts <= outs                                         # every flush card
-    assert not outs & helps
+    assert not outs & helps and not dangers & (outs | helps)
     assert next_card_equities(hole, [], 1) == {}                  # nothing preflop
     assert next_card_equities(hole, board, 1, stop=lambda: True) == {}
+
+
+def test_danger_cards():
+    from pot_odds import classify_next_cards, next_card_equities
+    rng = random.Random(5)
+    # A set of kings on a spade-heavy turn: any spade makes a flush for a
+    # hand holding one, and a ten makes broadway for a hand holding an ace.
+    hole, board = p("Kd Kc"), p("Ks Qs Js 2h")
+    eq = next_card_equities(hole, board, 1, 600, rng)
+    current = simulate_equity(hole, board, 1, 5000, rng)
+    outs, helps, dangers = classify_next_cards(eq, current, 1 / 3)
+    scary = set(p("As Ts 9s 8s 7s 6s 5s 4s 3s Th Td Tc"))
+    assert dangers == scary
+    assert not dangers & (outs | helps)
+    # A drop past the call line counts at a smaller step.
+    _o, _h, dz = classify_next_cards({0: 0.48, 1: 0.44, 2: 0.38, 3: 0.47}, 0.50, 0.45)
+    assert dz == {1, 2}

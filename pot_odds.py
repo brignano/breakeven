@@ -178,19 +178,25 @@ def next_card_equities(hole, board, opponents, iterations=300, rng=random,
     return result
 
 
-# How far one card has to lift your equity to count as an out, or as a help.
-OUT_JUMP, HELP_JUMP = 0.15, 0.05
+# How far one card has to lift your equity to count as an out, or as a help,
+# and how far it has to drop it to count as a danger card.
+OUT_JUMP, HELP_JUMP, DANGER_DROP = 0.15, 0.05, 0.10
 
 
 def classify_next_cards(equities, current, needed):
-    """Split next cards into outs and helpers.
+    """Split next cards into outs, helpers and danger cards.
 
     An out lifts your equity by OUT_JUMP and leaves you with at least the
     equity a call needs. A helper lifts it by HELP_JUMP but isn't an out.
+    A danger card helps the other players: it drops your equity by
+    DANGER_DROP, or by HELP_JUMP when that takes a call from paying to not.
     """
     outs = {c for c, e in equities.items() if e >= needed and e >= current + OUT_JUMP}
     helps = {c for c, e in equities.items() if c not in outs and e >= current + HELP_JUMP}
-    return outs, helps
+    dangers = {c for c, e in equities.items()
+               if e <= current - DANGER_DROP
+               or (e <= current - HELP_JUMP and e < needed <= current)}
+    return outs, helps, dangers
 
 
 def card_label(card):
@@ -223,6 +229,7 @@ THEME = {
     "card": "#fbfaf6", "red": "#d32f2f", "black": "#1d1d1f",
     "used": "#1e4a33", "used_text": "#3f7a5a",
     "out": "#fff1bf", "help": "#e3f4e8", "help_line": "#23a55a", "hover": "#2b6cb0",
+    "danger": "#f9d3cd", "danger_line": "#c94235",
     "call": "#23a55a", "fold": "#c94235", "neutral": "#255c40", "warn": "#b07a12",
 }
 
@@ -458,14 +465,17 @@ def run_gui():
     deck_cv = tk.Canvas(felt, bg=T["felt"], highlightthickness=0, cursor="hand2")
     deck_cv.pack(anchor="w")
     hover = [None]
-    # Next-card highlights: {"eq": {card: equity}, "outs": set, "helps": set}.
-    marks = {"eq": {}, "outs": set(), "helps": set()}
+    # Next-card highlights: {"eq": {card: equity}, "now": equity before it,
+    # "outs": set, "helps": set, "dangers": set}.
+    marks = {"eq": {}, "now": None, "outs": set(), "helps": set(), "dangers": set()}
 
-    def set_marks(eq=None, outs_=(), helps=()):
-        marks["eq"], marks["outs"], marks["helps"] = eq or {}, set(outs_), set(helps)
+    def set_marks(eq=None, now=None, outs_=(), helps=(), dangers=()):
+        marks.update(eq=eq or {}, now=now, outs=set(outs_), helps=set(helps),
+                     dangers=set(dangers))
         if marks["eq"]:
             deck_title.configure(text=f"DECK — {len(marks['outs'])} outs in gold, "
-                                      f"{len(marks['helps'])} helpers in green")
+                                      f"{len(marks['helps'])} helpers in green, "
+                                      f"{len(marks['dangers'])} danger cards in red")
         else:
             deck_title.configure(text="DECK — click a card to put it in the gold slot")
         draw_deck()
@@ -474,7 +484,9 @@ def run_gui():
     def show_hover_info():
         c = hover[0]
         if c is not None and c in marks["eq"]:
-            deck_info.configure(text=f"{card_label(c)} next: {marks['eq'][c]:.0%} to win")
+            e = marks["eq"][c]
+            deck_info.configure(text=f"{card_label(c)} next: {e:.0%} to win "
+                                     f"({(e - marks['now']) * 100:+.0f} pts)")
         else:
             deck_info.configure(text="point at a card" if marks["eq"] else "")
 
@@ -492,13 +504,16 @@ def run_gui():
                     fill, fg, outline = T["out"], ink(card), T["gold"]
                 elif card in marks["helps"]:
                     fill, fg, outline = T["help"], ink(card), T["help_line"]
+                elif card in marks["dangers"]:
+                    fill, fg, outline = T["danger"], ink(card), T["danger_line"]
                 else:
                     fill, fg, outline = T["card"], ink(card), "#d9d6cc"
                 if hover[0] == card and card not in used:
                     outline = T["hover"]
-                lit = card in marks["outs"] or card in marks["helps"] or hover[0] == card
+                strong = card in marks["outs"] or card in marks["dangers"]
+                lit = strong or card in marks["helps"] or hover[0] == card
                 _rounded_rect(deck_cv, x0, y0, x0 + dw, y0 + dh, px(7), fill=fill,
-                              outline=outline, width=3 if card in marks["outs"] else 2 if lit else 1)
+                              outline=outline, width=3 if strong else 2 if lit else 1)
                 deck_cv.create_text(x0 + dw / 2, y0 + px(16), text=card_label(card)[:-1],
                                     font=font(12, "bold"), fill=fg)
                 deck_cv.create_text(x0 + dw / 2, y0 + px(35), text=card_label(card)[-1],
@@ -682,8 +697,8 @@ def run_gui():
             def marked():
                 if run_id[0] != me or not per_card:
                     return
-                outs_, helps = classify_next_cards(per_card, eq, needed)
-                set_marks(per_card, outs_, helps)
+                outs_, helps, dangers = classify_next_cards(per_card, eq, needed)
+                set_marks(per_card, eq, outs_, helps, dangers)
                 if not outs_manual[0]:
                     outs.set(len(outs_))
                     outs_auto[0] = True

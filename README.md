@@ -32,7 +32,7 @@ Drag the window bigger and the cards and text grow with it. The results update a
 
 ## What you get back
 
-- **Your outs, highlighted**: on the flop and turn, the app tries every card that could come next. Cards that put you ahead turn **gold**, and cards that help but not enough turn **green**. Point at a card to see your chance to win if it comes. The gold cards are your outs, and the app counts them for you.
+- **Your outs and the danger cards, highlighted**: on the flop and turn, the app tries every card that could come next. Cards that put you ahead turn **gold**, and cards that help but not enough turn **green**. Cards that help your opponents turn **red**: ones that drop your chance to win by 10 points, or by 5 when that turns a call into a fold (the third flush card, the card that fills a straight). Point at a card to see your chance to win if it comes, and how far it moves. The gold cards are your outs, and the app counts them for you.
 
 - **Pot odds** and the **equity you need** to break even: call ÷ (pot + call).
 - **Outs**: the exact chance of hitting on the next card and by the river.
