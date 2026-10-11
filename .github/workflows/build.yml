@@ -1,0 +1,62 @@
+name: build
+
+# Every push: run the tests and build both apps (downloadable from the run).
+# A tag like v1.0.0: also attach the apps to a GitHub Release.
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pytest
+      - run: pytest -q
+
+  build:
+    needs: test
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            asset: PokerHelper-windows.zip
+          - os: macos-latest
+            asset: PokerHelper-mac.zip
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pyinstaller
+      - run: pyinstaller --windowed --onefile --name "Poker Helper" pot_odds.py
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Compress-Archive -Path "dist/Poker Helper.exe" -DestinationPath "${{ matrix.asset }}"
+
+      - name: Package (macOS)
+        if: runner.os == 'macOS'
+        # ditto keeps the .app bundle's permissions and symlinks; plain zip breaks it.
+        run: ditto -c -k --keepParent "dist/Poker Helper.app" "${{ matrix.asset }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: ${{ matrix.asset }}
+
+      - uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/v')
+        with:
+          files: ${{ matrix.asset }}
