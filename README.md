@@ -47,4 +47,4 @@ python3 pot_odds.py       # run it
 pip install pytest && pytest -q   # run the tests
 ```
 
-**Releasing:** push a tag such as `v1.0.0`. GitHub Actions runs the tests, builds the Windows and Mac apps with PyInstaller, and attaches both zips to a release for that tag. Every push to `main` also builds them, and you can download those builds from the Actions run.
+**Releasing:** in the Actions tab, open **build**, click **Run workflow**, and enter a version such as `v0.2.0`. You can also push a tag with that name. Either way, GitHub Actions runs the tests, builds the Windows and Mac apps with PyInstaller, and attaches both zips to a release. Every push to `main` also builds them, and you can download those builds from the Actions run.

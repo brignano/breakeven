@@ -1,13 +1,18 @@
 name: build
 
 # Every push: run the tests and build both apps (downloadable from the run).
-# A tag like v1.0.0: also attach the apps to a GitHub Release.
+# To publish a release, either push a tag like v1.0.0, or run this workflow
+# from the Actions tab with a version: the release step creates the tag.
 on:
   push:
     branches: [main]
     tags: ["v*"]
   pull_request:
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version, e.g. v0.2.0 (leave empty to only build)"
+        required: false
 
 permissions:
   contents: write
@@ -56,7 +61,17 @@ jobs:
           name: ${{ matrix.asset }}
           path: ${{ matrix.asset }}
 
-      - uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/v')
+  # One job publishes, so the two builds don't race to create the same release.
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.version != '')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
         with:
-          files: ${{ matrix.asset }}
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.version || github.ref_name }}
+          target_commitish: ${{ github.sha }}
+          files: PokerHelper-*.zip
