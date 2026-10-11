@@ -58,8 +58,7 @@ def test_next_card_highlights():
     eq = next_card_equities(hole, board, 1, 300, rng)
     assert len(eq) == 47 and not set(eq) & set(hole + board)
     assert eq[p("Th")[0]] == 1.0                                  # royal flush
-    current = simulate_equity(hole, board, 1, 3000, rng)
-    outs, helps, dangers = classify_next_cards(eq, current, 1 / 3)
+    outs, helps, dangers = classify_next_cards(eq, 1 / 3)
     hearts = {c for c in p("2h 3h 4h 5h 6h 7h 8h 9h Th")}
     assert hearts <= outs                                         # every flush card
     assert not outs & helps and not dangers & (outs | helps)
@@ -71,14 +70,28 @@ def test_danger_cards():
     from pot_odds import classify_next_cards, next_card_equities
     rng = random.Random(5)
     # A set of kings on a spade-heavy turn: any spade makes a flush for a
-    # hand holding one, and a ten makes broadway for a hand holding an ace.
+    # hand holding one, a ten makes broadway for a hand holding an ace, and
+    # an ace or a nine makes a straight for a hand holding a ten.
     hole, board = p("Kd Kc"), p("Ks Qs Js 2h")
     eq = next_card_equities(hole, board, 1, 600, rng)
-    current = simulate_equity(hole, board, 1, 5000, rng)
-    outs, helps, dangers = classify_next_cards(eq, current, 1 / 3)
-    scary = set(p("As Ts 9s 8s 7s 6s 5s 4s 3s Th Td Tc"))
-    assert dangers == scary
+    outs, helps, dangers = classify_next_cards(eq, 1 / 3)
+    sure = set(p("As Ts 9s 8s 7s 6s 5s 4s 3s Th Td Tc"))
+    assert sure <= dangers <= sure | set(p("Ah Ad Ac 9h 9d 9c"))
     assert not dangers & (outs | helps)
-    # A drop past the call line counts at a smaller step.
-    _o, _h, dz = classify_next_cards({0: 0.48, 1: 0.44, 2: 0.38, 3: 0.47}, 0.50, 0.45)
+    # A drop past the call line counts at a smaller step. The typical card
+    # (the median) is 0.50 here.
+    _o, _h, dz = classify_next_cards({0: 0.48, 1: 0.44, 2: 0.38, 3: 0.50, 4: 0.50,
+                                      5: 0.52, 6: 0.55}, 0.45)
     assert dz == {1, 2}
+
+
+def test_blanks_are_not_danger_cards():
+    from pot_odds import classify_next_cards, next_card_equities
+    # A weak draw on the flop: a blank turn costs one of two chances to hit,
+    # but that is no reason to flag it.
+    rng = random.Random(1)
+    hole, board = p("7s 6s"), p("Ah Kh Qh")
+    eq = next_card_equities(hole, board, 1, 300, rng)
+    outs, _helps, dangers = classify_next_cards(eq, 1 / 3)
+    assert not dangers
+    assert set(p("7d 7c 6d 6c")) <= outs

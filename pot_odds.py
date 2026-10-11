@@ -15,6 +15,7 @@ Then it compares the equity you have against the equity you need.
 """
 
 import random
+import statistics
 from collections import Counter
 from itertools import combinations
 
@@ -160,7 +161,7 @@ def simulate_equity(hole, board, opponents, iterations=5000, rng=random):
     return share / iterations
 
 
-def next_card_equities(hole, board, opponents, iterations=300, rng=random,
+def next_card_equities(hole, board, opponents, iterations=600, rng=random,
                        stop=lambda: False):
     """Equity with each possible next card dealt: {card: equity}.
 
@@ -183,19 +184,31 @@ def next_card_equities(hole, board, opponents, iterations=300, rng=random,
 OUT_JUMP, HELP_JUMP, DANGER_DROP = 0.15, 0.05, 0.10
 
 
-def classify_next_cards(equities, current, needed):
+def next_card_baseline(equities):
+    """Your equity after a typical next card: the median over all of them.
+
+    Cards are judged against this, not against your equity now. With two
+    cards to come, a blank costs a drawing hand one of its two chances, so
+    every blank would look like a danger card (and help a made hand).
+    """
+    return statistics.median(equities.values()) if equities else None
+
+
+def classify_next_cards(equities, needed):
     """Split next cards into outs, helpers and danger cards.
 
-    An out lifts your equity by OUT_JUMP and leaves you with at least the
-    equity a call needs. A helper lifts it by HELP_JUMP but isn't an out.
-    A danger card helps the other players: it drops your equity by
-    DANGER_DROP, or by HELP_JUMP when that takes a call from paying to not.
+    Each is measured against a typical next card. An out lifts your equity
+    by OUT_JUMP and leaves you with at least the equity a call needs. A
+    helper lifts it by HELP_JUMP but isn't an out. A danger card helps the
+    other players: it drops your equity by DANGER_DROP, or by HELP_JUMP when
+    that takes a call from paying to not.
     """
-    outs = {c for c, e in equities.items() if e >= needed and e >= current + OUT_JUMP}
-    helps = {c for c, e in equities.items() if c not in outs and e >= current + HELP_JUMP}
+    base = next_card_baseline(equities)
+    outs = {c for c, e in equities.items() if e >= needed and e >= base + OUT_JUMP}
+    helps = {c for c, e in equities.items() if c not in outs and e >= base + HELP_JUMP}
     dangers = {c for c, e in equities.items()
-               if e <= current - DANGER_DROP
-               or (e <= current - HELP_JUMP and e < needed <= current)}
+               if e <= base - DANGER_DROP
+               or (e <= base - HELP_JUMP and e < needed <= base)}
     return outs, helps, dangers
 
 
@@ -243,6 +256,7 @@ def _rounded_rect(cv, x1, y1, x2, y2, r, **kw):
 
 
 def run_gui():
+    import queue
     import threading
     import tkinter as tk
     import tkinter.font as tkfont
@@ -460,22 +474,22 @@ def run_gui():
     deck_head.pack(fill="x", pady=(14, 4))
     deck_title = label(deck_head, "", 9, "bold")
     deck_title.pack(side="left")
-    deck_info = label(deck_head, "", 9, "bold", fg=T["gold"])
+    # Fixed widths, in characters, so changing text never widens the window.
+    deck_info = label(deck_head, "", 9, "bold", fg=T["gold"], width=30, anchor="e")
     deck_info.pack(side="right")
     deck_cv = tk.Canvas(felt, bg=T["felt"], highlightthickness=0, cursor="hand2")
     deck_cv.pack(anchor="w")
     hover = [None]
-    # Next-card highlights: {"eq": {card: equity}, "now": equity before it,
-    # "outs": set, "helps": set, "dangers": set}.
-    marks = {"eq": {}, "now": None, "outs": set(), "helps": set(), "dangers": set()}
+    # Next-card highlights: {"eq": {card: equity}, "outs": set, "helps": set,
+    # "dangers": set}.
+    marks = {"eq": {}, "outs": set(), "helps": set(), "dangers": set()}
 
-    def set_marks(eq=None, now=None, outs_=(), helps=(), dangers=()):
-        marks.update(eq=eq or {}, now=now, outs=set(outs_), helps=set(helps),
-                     dangers=set(dangers))
+    def set_marks(eq=None, outs_=(), helps=(), dangers=()):
+        marks.update(eq=eq or {}, outs=set(outs_), helps=set(helps), dangers=set(dangers))
         if marks["eq"]:
-            deck_title.configure(text=f"DECK — {len(marks['outs'])} outs in gold, "
-                                      f"{len(marks['helps'])} helpers in green, "
-                                      f"{len(marks['dangers'])} danger cards in red")
+            deck_title.configure(text=f"DECK — gold: {len(marks['outs'])} outs  ·  "
+                                      f"green: {len(marks['helps'])} helpers  ·  "
+                                      f"red: {len(marks['dangers'])} danger")
         else:
             deck_title.configure(text="DECK — click a card to put it in the gold slot")
         draw_deck()
@@ -484,9 +498,8 @@ def run_gui():
     def show_hover_info():
         c = hover[0]
         if c is not None and c in marks["eq"]:
-            e = marks["eq"][c]
-            deck_info.configure(text=f"{card_label(c)} next: {e:.0%} to win "
-                                     f"({(e - marks['now']) * 100:+.0f} pts)")
+            deck_info.configure(text=f"{card_label(c)}: {marks['eq'][c]:.0%} to win "
+                                     f"(typical {next_card_baseline(marks['eq']):.0%})")
         else:
             deck_info.configure(text="point at a card" if marks["eq"] else "")
 
@@ -548,7 +561,7 @@ def run_gui():
 
     for name, n in COMMON_OUTS:
         pill(outs_row, f"{name} · {n}", lambda n=n: preset(n)).pack(side="left", padx=(8, 0))
-    outs_hint = label(outs_row, "optional", 9)
+    outs_hint = label(outs_row, "optional", 9, width=15, anchor="e")
     outs_hint.pack(side="right")
 
     # ---- Interaction ------------------------------------------------------
@@ -590,6 +603,15 @@ def run_gui():
     # that finishes after a newer one started is thrown away.
     run_id = [0]
     pending = [None]
+
+    # Simulations run on a worker thread, which hands its results back here
+    # rather than touching Tk itself: not every Tk takes calls from threads.
+    results = queue.Queue()
+
+    def take_results():
+        while not results.empty():
+            results.get()()
+        root.after(50, take_results)
 
     def schedule():
         if pending[0] is not None:
@@ -675,7 +697,7 @@ def run_gui():
             try:
                 eq = simulate_equity(hole, board, n_opps)
             except ValueError as e:
-                root.after(0, lambda: run_id[0] == me and draw_banner("?", T["warn"], str(e)))
+                results.put(lambda: run_id[0] == me and draw_banner("?", T["warn"], str(e)))
                 return
 
             def done():
@@ -687,7 +709,7 @@ def run_gui():
                 else:
                     draw_banner("CHECK", T["call"], f"{eq:.1%} to win",
                                 "Nothing to call.", eq, 0.0)
-            root.after(0, done)
+            results.put(done)
             if not auto:
                 return
 
@@ -697,14 +719,14 @@ def run_gui():
             def marked():
                 if run_id[0] != me or not per_card:
                     return
-                outs_, helps, dangers = classify_next_cards(per_card, eq, needed)
-                set_marks(per_card, eq, outs_, helps, dangers)
+                outs_, helps, dangers = classify_next_cards(per_card, needed)
+                set_marks(per_card, outs_, helps, dangers)
                 if not outs_manual[0]:
                     outs.set(len(outs_))
                     outs_auto[0] = True
                     show_notes(len(outs_))
                     outs_hint.configure(text="from your cards")
-            root.after(0, marked)
+            results.put(marked)
 
         threading.Thread(target=work, daemon=True).start()
 
@@ -722,13 +744,26 @@ def run_gui():
         if shown_banner[0]:
             paint_banner(*shown_banner[0])
 
-    # Grow everything with the window, never below the size it opens at.
-    # Padding doesn't scale, so the scaled content always fits.
-    base = [None]
+    # Scale everything to fit the window. The window's natural size is
+    # fixed padding plus content that grows with the scale, so measure it
+    # at two scales and solve for both parts.
+    MIN_SCALE, MAX_SCALE = 0.75, 4.0
+    parts = [None]
     resize_pending = [None]
 
+    def natural_size(s):
+        scale[0] = s
+        apply_scale()
+        root.update_idletasks()
+        return root.winfo_reqwidth(), root.winfo_reqheight()
+
+    def fit(width, height):
+        (fw, fh), (gw, gh) = parts[0]
+        s = min((width - fw - 16) / gw, (height - fh - 16) / gh)
+        return max(MIN_SCALE, min(MAX_SCALE, s))
+
     def on_resize(event):
-        if event.widget is not root or base[0] is None:
+        if event.widget is not root or parts[0] is None:
             return
         if resize_pending[0] is not None:
             root.after_cancel(resize_pending[0])
@@ -736,17 +771,30 @@ def run_gui():
 
     def rescale():
         resize_pending[0] = None
-        bw, bh = base[0]
-        new = max(1.0, min(root.winfo_width() / bw, root.winfo_height() / bh))
+        new = fit(root.winfo_width(), root.winfo_height())
         if abs(new - scale[0]) > 0.02:
             scale[0] = new
             apply_scale()
 
+    take_results()
+
+    # Measure hidden, so the window doesn't flash at the test sizes.
+    root.withdraw()
     apply_scale()
     calculate()
-    root.update_idletasks()
-    base[0] = (root.winfo_reqwidth(), root.winfo_reqheight())
-    root.minsize(*base[0])
+    w1, h1 = natural_size(1.0)
+    w2, h2 = natural_size(2.0)
+    grow = (w2 - w1, h2 - h1)
+    parts[0] = ((w1 - grow[0], h1 - grow[1]), grow)
+
+    # Open at the base size, or smaller if that wouldn't fit on the screen
+    # (leaving room for the taskbar and title bar).
+    root.minsize(*natural_size(MIN_SCALE))
+    start = min(1.0, fit(root.winfo_screenwidth() - 40, root.winfo_screenheight() - 120))
+    w, h = natural_size(start)
+    root.geometry(f"{w}x{h}+20+20")
+    root.resizable(True, True)
+    root.deiconify()
     root.bind("<Configure>", on_resize)
     root.mainloop()
 
