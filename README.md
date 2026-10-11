@@ -24,11 +24,11 @@ You only have to do this once. The Mac build runs on Apple Silicon Macs (M1 and 
 |---|---|
 | Pot | Type everything in the middle, **including the bet you're facing** |
 | To call | Type what you would put in |
-| Your cards | Optional. Click cards in the deck to fill your hand, then the flop, turn and river in order. The highlighted slot is filled next. Click a slot, or the card again, to take it back |
-| Opponents | Use the arrows to set how many players are still in the hand |
-| Outs | Optional. Use the arrows or a preset: flush draw (9), open-ended straight draw (8), gutshot (4) |
+| Your cards | Optional. Click cards in the deck to fill your hand, then the flop, turn and river in order. The gold slot is filled next. Click a slot, or the card again, to take it back |
+| Opponents | Use **−** and **+** to set how many players are still in the hand |
+| Outs | Optional. Use **−** and **+**, or a preset: flush draw (9), open-ended straight draw (8), gutshot (4) |
 
-The results update as you go. There is no button to press.
+The results update as you go. There is no button to press. A big banner shows **CALL** (green) or **FOLD** (red), with a bar comparing your equity to the equity you need.
 
 ## What you get back
 

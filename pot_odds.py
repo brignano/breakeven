@@ -176,93 +176,271 @@ def next_empty_slot(slots, after):
 
 
 # --------------------------------------------------------------------------
-# GUI
+# GUI: plain Tk widgets with our own colours and canvas-drawn cards, so it
+# looks the same on Windows and Mac instead of like a system dialog.
 # --------------------------------------------------------------------------
 
 # Seven card slots: two hole cards, then the board in dealing order.
-SLOT_GROUPS = [("Your hand", 0, 2), ("Flop", 2, 5), ("Turn", 5, 6), ("River", 6, 7)]
-COMMON_OUTS = [("Flush draw", 9), ("Open-ended", 8), ("Gutshot", 4), ("None", 0)]
+SLOT_GROUPS = [("YOUR HAND", 0, 2), ("FLOP", 2, 5), ("TURN", 5, 6), ("RIVER", 6, 7)]
+COMMON_OUTS = [("Flush draw", 9), ("Open-ended", 8), ("Gutshot", 4)]
+
+THEME = {
+    "bg": "#0d1410", "felt": "#17573a", "felt_dark": "#11432c", "felt_line": "#2c7a52",
+    "text": "#f3f6f4", "muted": "#a6c8b3", "gold": "#f2c14e",
+    "card": "#fbfaf6", "red": "#d32f2f", "black": "#1d1d1f",
+    "used": "#1e4a33", "used_text": "#3f7a5a",
+    "call": "#23a55a", "fold": "#c94235", "neutral": "#255c40", "warn": "#b07a12",
+}
+
+
+def _rounded_rect(cv, x1, y1, x2, y2, r, **kw):
+    pts = [x1 + r, y1, x1 + r, y1, x2 - r, y1, x2 - r, y1, x2, y1, x2, y1 + r,
+           x2, y1 + r, x2, y2 - r, x2, y2 - r, x2, y2, x2 - r, y2, x2 - r, y2,
+           x1 + r, y2, x1 + r, y2, x1, y2, x1, y2 - r, x1, y2 - r, x1, y1 + r,
+           x1, y1 + r, x1, y1]
+    return cv.create_polygon(pts, smooth=True, **kw)
 
 
 def run_gui():
     import threading
     import tkinter as tk
-    from tkinter import ttk
+    import tkinter.font as tkfont
 
+    T = THEME
     root = tk.Tk()
-    root.title("Poker Helper — Pot Odds")
+    root.title("Poker Helper")
+    root.configure(bg=T["bg"])
     root.resizable(False, False)
-    frm = ttk.Frame(root, padding=16)
-    frm.grid()
 
-    def heading(r, text):
-        ttk.Label(frm, text=text, font=("", 11, "bold")).grid(
-            row=r, column=0, columnspan=3, sticky="w", pady=(12 if r else 0, 2))
+    families = set(tkfont.families())
+    family = next((f for f in ("Segoe UI", "SF Pro Text", "Helvetica Neue", "Inter",
+                               "DejaVu Sans") if f in families), "Helvetica")
 
-    # ---- The bet: amounts are still typed, they're just numbers ----------
-    heading(0, "The bet")
+    def font(size, weight="normal"):
+        return (family, size, weight)
+
+    def label(parent, text="", size=10, weight="normal", fg=T["muted"], **kw):
+        return tk.Label(parent, text=text, font=font(size, weight), fg=fg,
+                        bg=parent["bg"], **kw)
+
+    def pill(parent, text, command, size=10):
+        """A flat clickable button. Tk buttons ignore colours on macOS; labels don't."""
+        w = tk.Label(parent, text=text, font=font(size, "bold"), fg=T["text"],
+                     bg=T["felt_dark"], padx=10, pady=4, cursor="hand2")
+        w.bind("<Button-1>", lambda _e: command())
+        w.bind("<Enter>", lambda _e: w.configure(bg=T["felt_line"]))
+        w.bind("<Leave>", lambda _e: w.configure(bg=T["felt_dark"]))
+        return w
+
+    outer = tk.Frame(root, bg=T["bg"], padx=18, pady=14)
+    outer.pack()
+
+    head = tk.Frame(outer, bg=T["bg"])
+    head.pack(fill="x", pady=(0, 10))
+    label(head, "♠ Poker Helper", 17, "bold", fg=T["text"]).pack(side="left")
+    label(head, "pot odds & equity", 10).pack(side="left", padx=10, pady=(6, 0))
+
+    felt = tk.Frame(outer, bg=T["felt"], padx=18, pady=14,
+                    highlightthickness=2, highlightbackground=T["felt_line"])
+    felt.pack(fill="x")
+
+    # ---- Top row: amounts, opponents, pot odds ---------------------------
+    top = tk.Frame(felt, bg=T["felt"])
+    top.pack(fill="x")
     fields = {}
-    for r, (label, key, default, hint) in enumerate([
-        ("Pot (incl. their bet)", "pot", "100", "everything in the middle now"),
-        ("To call", "call", "50", "what you'd put in"),
-    ], start=1):
-        ttk.Label(frm, text=label).grid(row=r, column=0, sticky="w", pady=3)
+
+    def amount(col, caption, key, default):
+        box = tk.Frame(top, bg=T["felt"])
+        box.grid(row=0, column=col, sticky="w", padx=(0, 18))
+        label(box, caption, 9, "bold").pack(anchor="w")
         var = tk.StringVar(value=default)
-        ttk.Entry(frm, textvariable=var, width=12).grid(row=r, column=1, sticky="w")
-        ttk.Label(frm, text=hint, foreground="gray").grid(row=r, column=2, sticky="w", padx=8)
+        tk.Entry(box, textvariable=var, width=7, font=font(16, "bold"), fg=T["text"],
+                 bg=T["felt_dark"], insertbackground=T["text"], relief="flat",
+                 highlightthickness=1, highlightbackground=T["felt_line"],
+                 highlightcolor=T["gold"]).pack(anchor="w", ipady=3)
         fields[key] = var
 
-    # ---- Cards: click a slot, then click a card in the deck ---------------
-    heading(3, "Your cards (optional) — click a card to place it")
+    amount(0, "POT (INCL. THEIR BET)", "pot", "100")
+    amount(1, "TO CALL", "call", "50")
+
+    def stepper(parent, var, lo, hi):
+        box = tk.Frame(parent, bg=T["felt"])
+        shown = label(box, str(var.get()), 16, "bold", fg=T["text"], width=2)
+
+        def step(d):
+            var.set(min(hi, max(lo, var.get() + d)))
+            shown.configure(text=str(var.get()))
+            schedule()
+
+        pill(box, "−", lambda: step(-1), 12).pack(side="left")
+        shown.pack(side="left", padx=4)
+        pill(box, "+", lambda: step(1), 12).pack(side="left")
+        var.trace_add("write", lambda *_: shown.configure(text=str(var.get())))
+        return box
+
+    opps = tk.IntVar(value=1)
+    obox = tk.Frame(top, bg=T["felt"])
+    obox.grid(row=0, column=2, sticky="w")
+    label(obox, "OPPONENTS", 9, "bold").pack(anchor="w")
+    stepper(obox, opps, 1, 9).pack(anchor="w", pady=(2, 0))
+
+    odds_box = tk.Frame(top, bg=T["felt"])
+    odds_box.grid(row=0, column=3, sticky="e")
+    top.grid_columnconfigure(3, weight=1)
+    odds_big = label(odds_box, "", 18, "bold", fg=T["gold"])
+    odds_big.pack(anchor="e")
+    odds_small = label(odds_box, "", 9)
+    odds_small.pack(anchor="e")
+
+    # ---- Card slots -------------------------------------------------------
     slots = [None] * 7
     active = [0]
-
-    slot_box = ttk.Frame(frm)
-    slot_box.grid(row=4, column=0, columnspan=3, sticky="w")
-    slot_widgets = []
-    col = 0
-    for name, start, end in SLOT_GROUPS:
-        ttk.Label(slot_box, text=name, foreground="gray").grid(
-            row=0, column=col, columnspan=end - start, sticky="w", padx=(0 if col == 0 else 14, 0))
+    SW, SH, GAP, GROUP_GAP = 58, 80, 8, 22
+    slot_x = []
+    x = 2
+    for _name, start, end in SLOT_GROUPS:
         for i in range(start, end):
-            w = tk.Label(slot_box, width=4, height=2, font=("", 15, "bold"),
-                         relief="solid", bd=1, cursor="hand2")
-            w.grid(row=1, column=col, padx=(14 if i == start and col else 2, 2), pady=2)
-            w.bind("<Button-1>", lambda _e, i=i: click_slot(i))
-            slot_widgets.append(w)
-            col += 1
-    ttk.Button(slot_box, text="Clear cards", command=lambda: clear_cards()).grid(
-        row=1, column=col, padx=(18, 0))
-
-    deck = ttk.Frame(frm)
-    deck.grid(row=5, column=0, columnspan=3, sticky="w", pady=(8, 0))
-    deck_widgets = {}
-    for row_i, suit in enumerate("shdc"):             # spades, hearts, diamonds, clubs
-        for col_i, rank in enumerate(reversed(RANKS)):  # A down to 2
-            card = RANKS.index(rank) * 4 + SUITS.index(suit)
-            w = tk.Label(deck, text=card_label(card), width=3, font=("", 12, "bold"),
-                         relief="raised", bd=1, cursor="hand2")
-            w.grid(row=row_i, column=col_i, padx=1, pady=1, ipady=3)
-            w.bind("<Button-1>", lambda _e, c=card: pick(c))
-            deck_widgets[card] = w
+            slot_x.append(x)
+            x += SW + GAP
+        x += GROUP_GAP - GAP
+    slot_row = tk.Frame(felt, bg=T["felt"])
+    slot_row.pack(fill="x", pady=(14, 0))
+    slot_cv = tk.Canvas(slot_row, width=x, height=SH + 22, bg=T["felt"],
+                        highlightthickness=0)
+    slot_cv.pack(side="left")
+    pill(slot_row, "Clear", lambda: clear_cards()).pack(side="right", anchor="s", pady=(0, 2))
 
     def ink(card):
-        return "#c62828" if card % 4 in (1, 2) else "#111111"
+        return T["red"] if card % 4 in (1, 2) else T["black"]
 
-    def refresh_cards():
-        for i, w in enumerate(slot_widgets):
-            card = slots[i]
-            bg = "#fff4c2" if i == active[0] else "white"
+    def draw_slots():
+        slot_cv.delete("all")
+        for name, start, _end in SLOT_GROUPS:
+            slot_cv.create_text(slot_x[start], 6, text=name, anchor="w",
+                                font=font(8, "bold"), fill=T["muted"])
+        for i, x0 in enumerate(slot_x):
+            y0, card = 18, slots[i]
             if card is None:
-                w.configure(text="", bg=bg)
+                outline = T["gold"] if i == active[0] else T["felt_line"]
+                _rounded_rect(slot_cv, x0, y0, x0 + SW, y0 + SH, 9, fill=T["felt_dark"],
+                              outline=outline, width=2 if i == active[0] else 1,
+                              dash=() if i == active[0] else (4, 3))
+                if i == active[0]:
+                    slot_cv.create_text(x0 + SW / 2, y0 + SH / 2, text="+",
+                                        font=font(18), fill=T["gold"])
             else:
-                w.configure(text=card_label(card), fg=ink(card), bg=bg)
+                rank, suit = card_label(card)[:-1], card_label(card)[-1]
+                _rounded_rect(slot_cv, x0, y0, x0 + SW, y0 + SH, 9, fill=T["card"],
+                              outline=T["gold"] if i == active[0] else "#d9d6cc",
+                              width=2 if i == active[0] else 1)
+                slot_cv.create_text(x0 + 8, y0 + 6, text=rank, anchor="nw",
+                                    font=font(13, "bold"), fill=ink(card))
+                slot_cv.create_text(x0 + SW / 2, y0 + SH / 2 + 10, text=suit,
+                                    font=font(24), fill=ink(card))
+        slot_cv.configure(cursor="hand2")
+
+    # Clicks are matched by position, not bound to canvas items, because every
+    # redraw replaces the items and a click on a just-replaced item is lost.
+    def slot_at(event):
+        for i, x0 in enumerate(slot_x):
+            if x0 <= event.x <= x0 + SW and 18 <= event.y <= 18 + SH:
+                return i
+        return None
+
+    slot_cv.bind("<Button-1>", lambda e: slot_at(e) is not None and click_slot(slot_at(e)))
+
+    # ---- Verdict banner ---------------------------------------------------
+    DW, DH, DG = 42, 50, 5                      # deck card size and gap
+    BW, BH = 13 * (DW + DG) - DG + 2, 92
+    banner = tk.Canvas(felt, width=BW, height=BH, bg=T["felt"], highlightthickness=0)
+    banner.pack(pady=(12, 0), anchor="w")
+    detail = label(felt, "", 10, justify="left", anchor="w", wraplength=BW)
+    detail.pack(fill="x", pady=(6, 0))
+
+    def draw_banner(word, colour, headline, sub="", equity=None, needed=None):
+        banner.delete("all")
+        _rounded_rect(banner, 1, 1, BW - 1, BH - 1, 14, fill=colour, outline="")
+        banner.create_text(22, 34, text=word, anchor="w", font=font(26, "bold"),
+                           fill="white")
+        banner.create_text(170, 26, text=headline, anchor="w", font=font(13, "bold"),
+                           fill="white")
+        banner.create_text(170, 48, text=sub, anchor="w", font=font(10), fill="#e9f3ec")
+        if equity is not None:
+            # Equity bar, with a tick where the call breaks even.
+            bx1, bx2, by = 22, BW - 22, 72
+            banner.create_rectangle(bx1, by, bx2, by + 8, fill="#0b2a1b", outline="")
+            banner.create_rectangle(bx1, by, bx1 + (bx2 - bx1) * equity, by + 8,
+                                    fill="white", outline="")
+            nx = bx1 + (bx2 - bx1) * needed
+            banner.create_line(nx, by - 4, nx, by + 12, fill=T["gold"], width=3)
+
+    def verdict(equity, needed, pot, call, basis):
+        ev = call_ev(pot, call, equity)
+        good = equity >= needed
+        draw_banner("CALL" if good else "FOLD", T["call"] if good else T["fold"],
+                    f"{equity:.1%} {basis}  ·  need {needed:.1%}",
+                    f"EV of calling {ev:+.2f}" + ("" if good else "  ·  on pot odds alone"),
+                    equity, needed)
+
+    # ---- The deck ---------------------------------------------------------
+    deck_head = tk.Frame(felt, bg=T["felt"])
+    deck_head.pack(fill="x", pady=(14, 4))
+    label(deck_head, "DECK — click a card to put it in the gold slot", 9, "bold").pack(side="left")
+    deck_cv = tk.Canvas(felt, width=13 * (DW + DG), height=4 * (DH + DG),
+                        bg=T["felt"], highlightthickness=0, cursor="hand2")
+    deck_cv.pack(anchor="w")
+    hover = [None]
+
+    def draw_deck():
+        deck_cv.delete("all")
         used = set(slots)
-        for card, w in deck_widgets.items():
-            if card in used:
-                w.configure(fg="#bbbbbb", bg="#e8e8e8", relief="flat")
-            else:
-                w.configure(fg=ink(card), bg="white", relief="raised")
+        for row_i, suit in enumerate("shdc"):               # spades, hearts, diamonds, clubs
+            for col_i, rank in enumerate(reversed(RANKS)):  # A down to 2
+                card = RANKS.index(rank) * 4 + SUITS.index(suit)
+                x0, y0 = col_i * (DW + DG) + 1, row_i * (DH + DG) + 1
+                if card in used:
+                    fill, fg, outline = T["used"], T["used_text"], T["used"]
+                else:
+                    fill, fg = T["card"], ink(card)
+                    outline = T["gold"] if hover[0] == card else "#d9d6cc"
+                _rounded_rect(deck_cv, x0, y0, x0 + DW, y0 + DH, 7, fill=fill,
+                              outline=outline, width=2 if hover[0] == card else 1)
+                deck_cv.create_text(x0 + DW / 2, y0 + 16, text=card_label(card)[:-1],
+                                    font=font(12, "bold"), fill=fg)
+                deck_cv.create_text(x0 + DW / 2, y0 + 35, text=card_label(card)[-1],
+                                    font=font(14), fill=fg)
+
+    def card_at(event):
+        col, row = event.x // (DW + DG), event.y // (DH + DG)
+        if not (0 <= col < 13 and 0 <= row < 4) or event.x % (DW + DG) > DW:
+            return None
+        return (12 - col) * 4 + SUITS.index("shdc"[row])
+
+    def set_hover(card):
+        if hover[0] != card:
+            hover[0] = card
+            draw_deck()
+
+    deck_cv.bind("<Button-1>", lambda e: card_at(e) is not None and pick(card_at(e)))
+    deck_cv.bind("<Motion>", lambda e: set_hover(card_at(e)))
+    deck_cv.bind("<Leave>", lambda _e: set_hover(None))
+
+    # ---- Outs -------------------------------------------------------------
+    outs_row = tk.Frame(felt, bg=T["felt"])
+    outs_row.pack(fill="x", pady=(12, 0))
+    label(outs_row, "OUTS", 9, "bold").pack(side="left", padx=(0, 8))
+    outs = tk.IntVar(value=0)
+    stepper(outs_row, outs, 0, 20).pack(side="left")
+    for name, n in COMMON_OUTS:
+        pill(outs_row, f"{name} · {n}", lambda n=n: (outs.set(n), schedule())).pack(
+            side="left", padx=(8, 0))
+    label(outs_row, "optional", 9).pack(side="right")
+
+    # ---- Interaction ------------------------------------------------------
+    def redraw_cards():
+        draw_slots()
+        draw_deck()
+        schedule()
 
     def pick(card):
         if card in slots:                # clicking a used card takes it back
@@ -272,56 +450,26 @@ def run_gui():
         else:
             slots[active[0]] = card
             active[0] = next_empty_slot(slots, active[0])
-        refresh_cards()
-        schedule()
+        redraw_cards()
 
     def click_slot(i):
         slots[i] = None
         active[0] = i
-        refresh_cards()
-        schedule()
+        redraw_cards()
 
     def clear_cards():
         slots[:] = [None] * 7
         active[0] = 0
-        refresh_cards()
-        schedule()
+        redraw_cards()
 
-    # ---- Opponents and outs: spinners and presets, no typing needed ------
-    heading(6, "The table")
-    opps = tk.IntVar(value=1)
-    ttk.Label(frm, text="Opponents").grid(row=7, column=0, sticky="w", pady=3)
-    ttk.Spinbox(frm, from_=1, to=9, textvariable=opps, width=4, state="readonly",
-                command=lambda: schedule()).grid(row=7, column=1, sticky="w")
-    ttk.Label(frm, text="players still in", foreground="gray").grid(
-        row=7, column=2, sticky="w", padx=8)
-
-    outs = tk.IntVar(value=0)
-    ttk.Label(frm, text="Outs").grid(row=8, column=0, sticky="w", pady=3)
-    ttk.Spinbox(frm, from_=0, to=20, textvariable=outs, width=4, state="readonly",
-                command=lambda: schedule()).grid(row=8, column=1, sticky="w")
-    presets = ttk.Frame(frm)
-    presets.grid(row=8, column=2, sticky="w", padx=8)
-    for i, (name, n) in enumerate(COMMON_OUTS):
-        label = f"{name} ({n})" if n else name
-        ttk.Button(presets, text=label, width=len(label) + 1,
-                   command=lambda n=n: (outs.set(n), schedule())).grid(row=0, column=i, padx=1)
-
-    out = tk.Text(frm, width=72, height=9, wrap="word", relief="flat",
-                  background=root.cget("background"))
-    out.grid(row=9, column=0, columnspan=3, pady=(12, 0), sticky="w")
-
-    def show(text):
-        out.configure(state="normal")
-        out.delete("1.0", "end")
-        out.insert("1.0", text)
-        out.configure(state="disabled")
-
-    def num(key):
+    def num(key, name):
         raw = fields[key].get().strip().replace("$", "").replace(",", "")
         if not raw:
-            raise ValueError(f"Fill in '{key}'.")
-        return float(raw)
+            raise ValueError(f"Fill in the {name}.")
+        try:
+            return float(raw)
+        except ValueError:
+            raise ValueError(f"The {name} should be a number.") from None
 
     # Results update as you go. Each run gets a number, so a slow simulation
     # that finishes after a newer one started is thrown away.
@@ -331,69 +479,90 @@ def run_gui():
     def schedule():
         if pending[0] is not None:
             root.after_cancel(pending[0])
-        pending[0] = root.after(200, calculate)
+        pending[0] = root.after(150, calculate)
 
     def calculate():
         pending[0] = None
         run_id[0] += 1
         me = run_id[0]
         try:
-            pot, call = num("pot"), num("call")
+            pot, call = num("pot", "pot"), num("call", "amount to call")
             if pot < 0 or call < 0:
                 raise ValueError("Amounts can't be negative.")
-            needed = pot_odds(pot, call)
-            lines = [
-                f"Pot odds: {pot:g} to {call:g}  ({pot / call:.2f} : 1)" if call else "Nothing to call.",
-                f"You need {needed:.1%} equity to break even.",
-            ]
+        except ValueError as e:
+            odds_big.configure(text="—")
+            odds_small.configure(text="")
+            detail.configure(text="")
+            draw_banner("?", T["warn"], str(e), "Type the pot and the bet you face.")
+            return
 
-            hole = [c for c in slots[:2] if c is not None]
-            board = [c for c in slots[2:] if c is not None]
+        needed = pot_odds(pot, call)
+        odds_big.configure(text=f"{pot / call:.2f} : 1" if call else "free")
+        odds_small.configure(text=f"need {needed:.1%} equity")
 
-            n_outs = outs.get()
-            if n_outs:
-                nxt, river = outs_probability(n_outs, len(board))
-                if nxt is None:
-                    lines.append("\nOuts: pick the flop (and turn) to use outs.")
-                else:
-                    lines.append(f"\nOuts ({n_outs}): {nxt:.1%} on the next card"
-                                 + (f", {river:.1%} by the river" if river is not None else ""))
-                    lines.append(_verdict(nxt, needed, pot, call, "next card"))
+        hole = [c for c in slots[:2] if c is not None]
+        board = [c for c in slots[2:] if c is not None]
+        notes = []
+        outs_hit = None
+        n_outs = outs.get()
+        if n_outs:
+            nxt, river = outs_probability(n_outs, len(board))
+            if nxt is None:
+                notes.append("Outs need the flop (or flop and turn) on the board.")
+            else:
+                outs_hit = nxt
+                notes.append(f"{n_outs} outs: {nxt:.1%} on the next card"
+                             + (f", {river:.1%} by the river" if river is not None else ""))
 
-            if len(hole) < 2 or len(board) in (1, 2):
-                if hole or board:
-                    lines.append("\nPick both hole cards and 0, 3, 4 or 5 board cards for equity.")
-                show("\n".join(lines))
+        can_sim = len(hole) == 2 and len(board) in (0, 3, 4, 5)
+        if (hole or board) and not can_sim:
+            notes.append("Pick both hole cards, and 0, 3, 4 or 5 board cards, to see your equity.")
+        detail.configure(text="   ·   ".join(notes))
+
+        def fallback():
+            if not call:
+                draw_banner("CHECK", T["call"], "Nothing to call", "It costs nothing to see more cards.")
+            elif outs_hit is not None:
+                verdict(outs_hit, needed, pot, call, "to hit next card")
+            else:
+                draw_banner("NEED", T["neutral"], f"{needed:.1%} equity to call",
+                            "Pick your cards or set your outs to get a verdict.",
+                            0.0, needed)
+
+        if not can_sim:
+            fallback()
+            return
+
+        n_opps = opps.get()
+        draw_banner("…", T["neutral"], "Simulating",
+                    f"5,000 hands against {n_opps} random hand{'s' * (n_opps > 1)}")
+
+        def work():
+            try:
+                eq = simulate_equity(hole, board, n_opps)
+            except ValueError as e:
+                root.after(0, lambda: run_id[0] == me and draw_banner("?", T["warn"], str(e)))
                 return
 
-            n_opps = opps.get()
-            show("\n".join(lines) + "\n\nSimulating…")
+            def done():
+                if run_id[0] != me:
+                    return
+                if call:
+                    verdict(eq, needed, pot, call,
+                            f"to win vs {n_opps} hand{'s' * (n_opps > 1)}")
+                else:
+                    draw_banner("CHECK", T["call"], f"{eq:.1%} to win",
+                                "Nothing to call.", eq, 0.0)
+            root.after(0, done)
 
-            def work():
-                try:
-                    eq = simulate_equity(hole, board, n_opps)
-                    text = ("\n".join(lines)
-                            + f"\n\nEquity vs {n_opps} random hand{'s' * (n_opps > 1)}: {eq:.1%}"
-                            + f"\n{_verdict(eq, needed, pot, call, 'showdown')}")
-                except ValueError as e:
-                    text = f"⚠ {e}"
-                root.after(0, lambda: run_id[0] == me and show(text))
-
-            threading.Thread(target=work, daemon=True).start()
-        except ValueError as e:
-            show(f"⚠ {e}")
+        threading.Thread(target=work, daemon=True).start()
 
     for var in fields.values():
         var.trace_add("write", lambda *_: schedule())
-    refresh_cards()
+    draw_slots()
+    draw_deck()
     calculate()
     root.mainloop()
-
-
-def _verdict(equity, needed, pot, call, basis):
-    ev = call_ev(pot, call, equity)
-    word = "CALL" if equity >= needed else "FOLD (on pot odds alone)"
-    return f"→ {word}: {equity:.1%} vs {needed:.1%} needed, EV {ev:+.2f} ({basis})"
 
 
 if __name__ == "__main__":
