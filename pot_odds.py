@@ -210,14 +210,25 @@ def run_gui():
     root = tk.Tk()
     root.title("Poker Helper")
     root.configure(bg=T["bg"])
-    root.resizable(False, False)
+    root.minsize(1, 1)
 
     families = set(tkfont.families())
     family = next((f for f in ("Segoe UI", "SF Pro Text", "Helvetica Neue", "Inter",
                                "DejaVu Sans") if f in families), "Helvetica")
 
+    # Everything is drawn at a base size times `scale`, which follows the
+    # window size. Fonts are shared objects, so resizing one updates every
+    # widget and canvas text that uses it.
+    scale = [1.0]
+    fonts = {}
+
     def font(size, weight="normal"):
-        return (family, size, weight)
+        if (size, weight) not in fonts:
+            fonts[size, weight] = tkfont.Font(family=family, size=size, weight=weight)
+        return fonts[size, weight]
+
+    def px(v):
+        return v * scale[0]
 
     def label(parent, text="", size=10, weight="normal", fg=T["muted"], **kw):
         return tk.Label(parent, text=text, font=font(size, weight), fg=fg,
@@ -233,7 +244,7 @@ def run_gui():
         return w
 
     outer = tk.Frame(root, bg=T["bg"], padx=18, pady=14)
-    outer.pack()
+    outer.pack(expand=True)
 
     head = tk.Frame(outer, bg=T["bg"])
     head.pack(fill="x", pady=(0, 10))
@@ -295,18 +306,20 @@ def run_gui():
     # ---- Card slots -------------------------------------------------------
     slots = [None] * 7
     active = [0]
-    SW, SH, GAP, GROUP_GAP = 58, 80, 8, 22
-    slot_x = []
-    x = 2
-    for _name, start, end in SLOT_GROUPS:
-        for i in range(start, end):
-            slot_x.append(x)
-            x += SW + GAP
-        x += GROUP_GAP - GAP
+    SW, SH, GAP, GROUP_GAP, SLOT_TOP = 58, 80, 8, 22, 18   # at scale 1
+
+    def slot_xs():
+        xs, x = [], 2
+        for _name, start, end in SLOT_GROUPS:
+            for _i in range(start, end):
+                xs.append(px(x))
+                x += SW + GAP
+            x += GROUP_GAP - GAP
+        return xs, px(x)
+
     slot_row = tk.Frame(felt, bg=T["felt"])
     slot_row.pack(fill="x", pady=(14, 0))
-    slot_cv = tk.Canvas(slot_row, width=x, height=SH + 22, bg=T["felt"],
-                        highlightthickness=0)
+    slot_cv = tk.Canvas(slot_row, bg=T["felt"], highlightthickness=0)
     slot_cv.pack(side="left")
     pill(slot_row, "Clear", lambda: clear_cards()).pack(side="right", anchor="s", pady=(0, 2))
 
@@ -315,64 +328,75 @@ def run_gui():
 
     def draw_slots():
         slot_cv.delete("all")
+        xs, _ = slot_xs()
+        sw, sh, y0 = px(SW), px(SH), px(SLOT_TOP)
         for name, start, _end in SLOT_GROUPS:
-            slot_cv.create_text(slot_x[start], 6, text=name, anchor="w",
+            slot_cv.create_text(xs[start], px(6), text=name, anchor="w",
                                 font=font(8, "bold"), fill=T["muted"])
-        for i, x0 in enumerate(slot_x):
-            y0, card = 18, slots[i]
+        for i, x0 in enumerate(xs):
+            card = slots[i]
             if card is None:
                 outline = T["gold"] if i == active[0] else T["felt_line"]
-                _rounded_rect(slot_cv, x0, y0, x0 + SW, y0 + SH, 9, fill=T["felt_dark"],
+                _rounded_rect(slot_cv, x0, y0, x0 + sw, y0 + sh, px(9), fill=T["felt_dark"],
                               outline=outline, width=2 if i == active[0] else 1,
                               dash=() if i == active[0] else (4, 3))
                 if i == active[0]:
-                    slot_cv.create_text(x0 + SW / 2, y0 + SH / 2, text="+",
+                    slot_cv.create_text(x0 + sw / 2, y0 + sh / 2, text="+",
                                         font=font(18), fill=T["gold"])
             else:
                 rank, suit = card_label(card)[:-1], card_label(card)[-1]
-                _rounded_rect(slot_cv, x0, y0, x0 + SW, y0 + SH, 9, fill=T["card"],
+                _rounded_rect(slot_cv, x0, y0, x0 + sw, y0 + sh, px(9), fill=T["card"],
                               outline=T["gold"] if i == active[0] else "#d9d6cc",
                               width=2 if i == active[0] else 1)
-                slot_cv.create_text(x0 + 8, y0 + 6, text=rank, anchor="nw",
+                slot_cv.create_text(x0 + px(8), y0 + px(6), text=rank, anchor="nw",
                                     font=font(13, "bold"), fill=ink(card))
-                slot_cv.create_text(x0 + SW / 2, y0 + SH / 2 + 10, text=suit,
+                slot_cv.create_text(x0 + sw / 2, y0 + sh / 2 + px(10), text=suit,
                                     font=font(24), fill=ink(card))
         slot_cv.configure(cursor="hand2")
 
     # Clicks are matched by position, not bound to canvas items, because every
     # redraw replaces the items and a click on a just-replaced item is lost.
     def slot_at(event):
-        for i, x0 in enumerate(slot_x):
-            if x0 <= event.x <= x0 + SW and 18 <= event.y <= 18 + SH:
+        for i, x0 in enumerate(slot_xs()[0]):
+            if x0 <= event.x <= x0 + px(SW) and px(SLOT_TOP) <= event.y <= px(SLOT_TOP + SH):
                 return i
         return None
 
     slot_cv.bind("<Button-1>", lambda e: slot_at(e) is not None and click_slot(slot_at(e)))
 
     # ---- Verdict banner ---------------------------------------------------
-    DW, DH, DG = 42, 50, 5                      # deck card size and gap
+    DW, DH, DG = 42, 50, 5                      # deck card size and gap, at scale 1
     BW, BH = 13 * (DW + DG) - DG + 2, 92
-    banner = tk.Canvas(felt, width=BW, height=BH, bg=T["felt"], highlightthickness=0)
+    banner = tk.Canvas(felt, bg=T["felt"], highlightthickness=0)
     banner.pack(pady=(12, 0), anchor="w")
-    detail = label(felt, "", 10, justify="left", anchor="w", wraplength=BW)
+    detail = label(felt, "", 10, justify="left", anchor="w")
     detail.pack(fill="x", pady=(6, 0))
 
-    def draw_banner(word, colour, headline, sub="", equity=None, needed=None):
+    shown_banner = [None]
+
+    def draw_banner(*args):
+        shown_banner[0] = args
+        paint_banner(*args)
+
+    def paint_banner(word, colour, headline, sub="", equity=None, needed=None):
         banner.delete("all")
-        _rounded_rect(banner, 1, 1, BW - 1, BH - 1, 14, fill=colour, outline="")
-        banner.create_text(22, 34, text=word, anchor="w", font=font(26, "bold"),
+        bw, bh = px(BW), px(BH)
+        _rounded_rect(banner, 1, 1, bw - 1, bh - 1, px(14), fill=colour, outline="")
+        banner.create_text(px(22), px(34), text=word, anchor="w", font=font(26, "bold"),
                            fill="white")
-        banner.create_text(170, 26, text=headline, anchor="w", font=font(13, "bold"),
-                           fill="white")
-        banner.create_text(170, 48, text=sub, anchor="w", font=font(10), fill="#e9f3ec")
+        banner.create_text(px(170), px(26), text=headline, anchor="w",
+                           font=font(13, "bold"), fill="white")
+        banner.create_text(px(170), px(48), text=sub, anchor="w", font=font(10),
+                           fill="#e9f3ec")
         if equity is not None:
             # Equity bar, with a tick where the call breaks even.
-            bx1, bx2, by = 22, BW - 22, 72
-            banner.create_rectangle(bx1, by, bx2, by + 8, fill="#0b2a1b", outline="")
-            banner.create_rectangle(bx1, by, bx1 + (bx2 - bx1) * equity, by + 8,
+            bx1, bx2, by, bt = px(22), bw - px(22), px(72), px(8)
+            banner.create_rectangle(bx1, by, bx2, by + bt, fill="#0b2a1b", outline="")
+            banner.create_rectangle(bx1, by, bx1 + (bx2 - bx1) * equity, by + bt,
                                     fill="white", outline="")
             nx = bx1 + (bx2 - bx1) * needed
-            banner.create_line(nx, by - 4, nx, by + 12, fill=T["gold"], width=3)
+            banner.create_line(nx, by - px(4), nx, by + bt + px(4), fill=T["gold"],
+                               width=px(3))
 
     def verdict(equity, needed, pot, call, basis):
         ev = call_ev(pot, call, equity)
@@ -386,33 +410,33 @@ def run_gui():
     deck_head = tk.Frame(felt, bg=T["felt"])
     deck_head.pack(fill="x", pady=(14, 4))
     label(deck_head, "DECK — click a card to put it in the gold slot", 9, "bold").pack(side="left")
-    deck_cv = tk.Canvas(felt, width=13 * (DW + DG), height=4 * (DH + DG),
-                        bg=T["felt"], highlightthickness=0, cursor="hand2")
+    deck_cv = tk.Canvas(felt, bg=T["felt"], highlightthickness=0, cursor="hand2")
     deck_cv.pack(anchor="w")
     hover = [None]
 
     def draw_deck():
         deck_cv.delete("all")
         used = set(slots)
+        dw, dh, step_ = px(DW), px(DH), px(DW + DG)
         for row_i, suit in enumerate("shdc"):               # spades, hearts, diamonds, clubs
             for col_i, rank in enumerate(reversed(RANKS)):  # A down to 2
                 card = RANKS.index(rank) * 4 + SUITS.index(suit)
-                x0, y0 = col_i * (DW + DG) + 1, row_i * (DH + DG) + 1
+                x0, y0 = col_i * step_ + 1, row_i * px(DH + DG) + 1
                 if card in used:
                     fill, fg, outline = T["used"], T["used_text"], T["used"]
                 else:
                     fill, fg = T["card"], ink(card)
                     outline = T["gold"] if hover[0] == card else "#d9d6cc"
-                _rounded_rect(deck_cv, x0, y0, x0 + DW, y0 + DH, 7, fill=fill,
+                _rounded_rect(deck_cv, x0, y0, x0 + dw, y0 + dh, px(7), fill=fill,
                               outline=outline, width=2 if hover[0] == card else 1)
-                deck_cv.create_text(x0 + DW / 2, y0 + 16, text=card_label(card)[:-1],
+                deck_cv.create_text(x0 + dw / 2, y0 + px(16), text=card_label(card)[:-1],
                                     font=font(12, "bold"), fill=fg)
-                deck_cv.create_text(x0 + DW / 2, y0 + 35, text=card_label(card)[-1],
+                deck_cv.create_text(x0 + dw / 2, y0 + px(35), text=card_label(card)[-1],
                                     font=font(14), fill=fg)
 
     def card_at(event):
-        col, row = event.x // (DW + DG), event.y // (DH + DG)
-        if not (0 <= col < 13 and 0 <= row < 4) or event.x % (DW + DG) > DW:
+        col, row = int(event.x // px(DW + DG)), int(event.y // px(DH + DG))
+        if not (0 <= col < 13 and 0 <= row < 4) or event.x % px(DW + DG) > px(DW):
             return None
         return (12 - col) * 4 + SUITS.index("shdc"[row])
 
@@ -559,9 +583,44 @@ def run_gui():
 
     for var in fields.values():
         var.trace_add("write", lambda *_: schedule())
-    draw_slots()
-    draw_deck()
+    def apply_scale():
+        for (size, _weight), f in fonts.items():
+            f.configure(size=max(1, round(size * scale[0])))
+        slot_cv.configure(width=slot_xs()[1], height=px(SLOT_TOP + SH + 4))
+        banner.configure(width=px(BW), height=px(BH))
+        detail.configure(wraplength=px(BW))
+        deck_cv.configure(width=px(13 * (DW + DG)), height=px(4 * (DH + DG)))
+        draw_slots()
+        draw_deck()
+        if shown_banner[0]:
+            paint_banner(*shown_banner[0])
+
+    # Grow everything with the window, never below the size it opens at.
+    # Padding doesn't scale, so the scaled content always fits.
+    base = [None]
+    resize_pending = [None]
+
+    def on_resize(event):
+        if event.widget is not root or base[0] is None:
+            return
+        if resize_pending[0] is not None:
+            root.after_cancel(resize_pending[0])
+        resize_pending[0] = root.after(40, rescale)
+
+    def rescale():
+        resize_pending[0] = None
+        bw, bh = base[0]
+        new = max(1.0, min(root.winfo_width() / bw, root.winfo_height() / bh))
+        if abs(new - scale[0]) > 0.02:
+            scale[0] = new
+            apply_scale()
+
+    apply_scale()
     calculate()
+    root.update_idletasks()
+    base[0] = (root.winfo_reqwidth(), root.winfo_reqheight())
+    root.minsize(*base[0])
+    root.bind("<Configure>", on_resize)
     root.mainloop()
 
 

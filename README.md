@@ -28,7 +28,7 @@ You only have to do this once. The Mac build runs on Apple Silicon Macs (M1 and 
 | Opponents | Use **−** and **+** to set how many players are still in the hand |
 | Outs | Optional. Use **−** and **+**, or a preset: flush draw (9), open-ended straight draw (8), gutshot (4) |
 
-The results update as you go. There is no button to press. A big banner shows **CALL** (green) or **FOLD** (red), with a bar comparing your equity to the equity you need.
+Drag the window bigger and the cards and text grow with it. The results update as you go. There is no button to press. A big banner shows **CALL** (green) or **FOLD** (red), with a bar comparing your equity to the equity you need.
 
 ## What you get back
 
