@@ -4,8 +4,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from pot_odds import (call_ev, hand_rank, outs_probability, parse_cards as p,
-                      pot_odds, simulate_equity)
+from pot_odds import (call_ev, card_label, hand_rank, next_empty_slot, outs_probability,
+                      parse_cards as p, pot_odds, simulate_equity)
 
 
 def test_hand_rank():
@@ -42,3 +42,10 @@ def test_equity_matches_known_values():
     rng = random.Random(1)
     assert abs(simulate_equity(p("Ah Ad"), [], 1, 20000, rng) - 0.852) < 0.01
     assert abs(simulate_equity(p("7h 2d"), [], 1, 20000, rng) - 0.346) < 0.01
+
+
+def test_card_picker_helpers():
+    assert [card_label(c) for c in p("Ah Td 2c Ks")] == ["A♥", "10♦", "2♣", "K♠"]
+    assert next_empty_slot([1, None, None], 0) == 1
+    assert next_empty_slot([None, 1, 2], 2) == 0                 # wraps round
+    assert next_empty_slot([1, 2, 3], 1) == 1                    # all full: stay

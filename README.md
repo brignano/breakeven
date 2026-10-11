@@ -18,16 +18,17 @@ You don't need to install Python or anything else.
 
 You only have to do this once. The Mac build runs on Apple Silicon Macs (M1 and later).
 
-## What you type in
+## How to use it
 
-| Field | Meaning |
+| Input | Meaning |
 |---|---|
-| Pot | Everything in the middle, **including the bet you're facing** |
-| To call | What you would put in |
-| Hole cards | Optional. Use `Ah Kh` or `A♥ K♥`. `10` and `T` both mean ten |
-| Board | Optional. Enter 0, 3, 4 or 5 cards |
-| Opponents | The number of players still in the hand |
-| Outs | Optional. For example, 9 for a flush draw or 8 for an open-ended straight draw |
+| Pot | Type everything in the middle, **including the bet you're facing** |
+| To call | Type what you would put in |
+| Your cards | Optional. Click cards in the deck to fill your hand, then the flop, turn and river in order. The gold slot is filled next. Click a slot, or the card again, to take it back |
+| Opponents | Use **−** and **+** to set how many players are still in the hand |
+| Outs | Optional. Use **−** and **+**, or a preset: flush draw (9), open-ended straight draw (8), gutshot (4) |
+
+The results update as you go. There is no button to press. A big banner shows **CALL** (green) or **FOLD** (red), with a bar comparing your equity to the equity you need.
 
 ## What you get back
 
