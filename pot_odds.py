@@ -160,6 +160,39 @@ def simulate_equity(hole, board, opponents, iterations=5000, rng=random):
     return share / iterations
 
 
+def next_card_equities(hole, board, opponents, iterations=300, rng=random,
+                       stop=lambda: False):
+    """Equity with each possible next card dealt: {card: equity}.
+
+    Only on the flop or turn; empty otherwise, or if `stop()` turns true.
+    """
+    if len(board) not in (3, 4):
+        return {}
+    result = {}
+    for card in range(52):
+        if card in hole or card in board:
+            continue
+        if stop():
+            return {}
+        result[card] = simulate_equity(hole, board + [card], opponents, iterations, rng)
+    return result
+
+
+# How far one card has to lift your equity to count as an out, or as a help.
+OUT_JUMP, HELP_JUMP = 0.15, 0.05
+
+
+def classify_next_cards(equities, current, needed):
+    """Split next cards into outs and helpers.
+
+    An out lifts your equity by OUT_JUMP and leaves you with at least the
+    equity a call needs. A helper lifts it by HELP_JUMP but isn't an out.
+    """
+    outs = {c for c, e in equities.items() if e >= needed and e >= current + OUT_JUMP}
+    helps = {c for c, e in equities.items() if c not in outs and e >= current + HELP_JUMP}
+    return outs, helps
+
+
 def card_label(card):
     """Card int -> 'A♠' / '10♥', for display."""
     return RANKS[card // 4].replace("T", "10") + "♣♦♥♠"[card % 4]
@@ -189,6 +222,7 @@ THEME = {
     "text": "#f3f6f4", "muted": "#a6c8b3", "gold": "#f2c14e",
     "card": "#fbfaf6", "red": "#d32f2f", "black": "#1d1d1f",
     "used": "#1e4a33", "used_text": "#3f7a5a",
+    "out": "#fff1bf", "help": "#e3f4e8", "help_line": "#23a55a", "hover": "#2b6cb0",
     "call": "#23a55a", "fold": "#c94235", "neutral": "#255c40", "warn": "#b07a12",
 }
 
@@ -281,6 +315,8 @@ def run_gui():
         def step(d):
             var.set(min(hi, max(lo, var.get() + d)))
             shown.configure(text=str(var.get()))
+            if var is outs:
+                outs_manual[0], outs_auto[0] = True, False
             schedule()
 
         pill(box, "−", lambda: step(-1), 12).pack(side="left")
@@ -290,6 +326,12 @@ def run_gui():
         return box
 
     opps = tk.IntVar(value=1)
+    # On the flop and turn, outs are counted from your cards unless you set
+    # them yourself. A new spot (other cards or opponents) counts afresh.
+    outs = tk.IntVar(value=0)
+    outs_manual = [False]   # the user set the count for this spot
+    outs_auto = [False]     # the count on show came from the cards
+    spot = [None]
     obox = tk.Frame(top, bg=T["felt"])
     obox.grid(row=0, column=2, sticky="w")
     label(obox, "OPPONENTS", 9, "bold").pack(anchor="w")
@@ -409,10 +451,32 @@ def run_gui():
     # ---- The deck ---------------------------------------------------------
     deck_head = tk.Frame(felt, bg=T["felt"])
     deck_head.pack(fill="x", pady=(14, 4))
-    label(deck_head, "DECK — click a card to put it in the gold slot", 9, "bold").pack(side="left")
+    deck_title = label(deck_head, "", 9, "bold")
+    deck_title.pack(side="left")
+    deck_info = label(deck_head, "", 9, "bold", fg=T["gold"])
+    deck_info.pack(side="right")
     deck_cv = tk.Canvas(felt, bg=T["felt"], highlightthickness=0, cursor="hand2")
     deck_cv.pack(anchor="w")
     hover = [None]
+    # Next-card highlights: {"eq": {card: equity}, "outs": set, "helps": set}.
+    marks = {"eq": {}, "outs": set(), "helps": set()}
+
+    def set_marks(eq=None, outs_=(), helps=()):
+        marks["eq"], marks["outs"], marks["helps"] = eq or {}, set(outs_), set(helps)
+        if marks["eq"]:
+            deck_title.configure(text=f"DECK — {len(marks['outs'])} outs in gold, "
+                                      f"{len(marks['helps'])} helpers in green")
+        else:
+            deck_title.configure(text="DECK — click a card to put it in the gold slot")
+        draw_deck()
+        show_hover_info()
+
+    def show_hover_info():
+        c = hover[0]
+        if c is not None and c in marks["eq"]:
+            deck_info.configure(text=f"{card_label(c)} next: {marks['eq'][c]:.0%} to win")
+        else:
+            deck_info.configure(text="point at a card" if marks["eq"] else "")
 
     def draw_deck():
         deck_cv.delete("all")
@@ -424,11 +488,17 @@ def run_gui():
                 x0, y0 = col_i * step_ + 1, row_i * px(DH + DG) + 1
                 if card in used:
                     fill, fg, outline = T["used"], T["used_text"], T["used"]
+                elif card in marks["outs"]:
+                    fill, fg, outline = T["out"], ink(card), T["gold"]
+                elif card in marks["helps"]:
+                    fill, fg, outline = T["help"], ink(card), T["help_line"]
                 else:
-                    fill, fg = T["card"], ink(card)
-                    outline = T["gold"] if hover[0] == card else "#d9d6cc"
+                    fill, fg, outline = T["card"], ink(card), "#d9d6cc"
+                if hover[0] == card and card not in used:
+                    outline = T["hover"]
+                lit = card in marks["outs"] or card in marks["helps"] or hover[0] == card
                 _rounded_rect(deck_cv, x0, y0, x0 + dw, y0 + dh, px(7), fill=fill,
-                              outline=outline, width=2 if hover[0] == card else 1)
+                              outline=outline, width=3 if card in marks["outs"] else 2 if lit else 1)
                 deck_cv.create_text(x0 + dw / 2, y0 + px(16), text=card_label(card)[:-1],
                                     font=font(12, "bold"), fill=fg)
                 deck_cv.create_text(x0 + dw / 2, y0 + px(35), text=card_label(card)[-1],
@@ -444,6 +514,7 @@ def run_gui():
         if hover[0] != card:
             hover[0] = card
             draw_deck()
+            show_hover_info()
 
     deck_cv.bind("<Button-1>", lambda e: card_at(e) is not None and pick(card_at(e)))
     deck_cv.bind("<Motion>", lambda e: set_hover(card_at(e)))
@@ -453,12 +524,17 @@ def run_gui():
     outs_row = tk.Frame(felt, bg=T["felt"])
     outs_row.pack(fill="x", pady=(12, 0))
     label(outs_row, "OUTS", 9, "bold").pack(side="left", padx=(0, 8))
-    outs = tk.IntVar(value=0)
     stepper(outs_row, outs, 0, 20).pack(side="left")
+
+    def preset(n):
+        outs.set(n)
+        outs_manual[0], outs_auto[0] = True, False
+        schedule()
+
     for name, n in COMMON_OUTS:
-        pill(outs_row, f"{name} · {n}", lambda n=n: (outs.set(n), schedule())).pack(
-            side="left", padx=(8, 0))
-    label(outs_row, "optional", 9).pack(side="right")
+        pill(outs_row, f"{name} · {n}", lambda n=n: preset(n)).pack(side="left", padx=(8, 0))
+    outs_hint = label(outs_row, "optional", 9)
+    outs_hint.pack(side="right")
 
     # ---- Interaction ------------------------------------------------------
     def redraw_cards():
@@ -526,22 +602,41 @@ def run_gui():
 
         hole = [c for c in slots[:2] if c is not None]
         board = [c for c in slots[2:] if c is not None]
-        notes = []
-        outs_hit = None
-        n_outs = outs.get()
-        if n_outs:
-            nxt, river = outs_probability(n_outs, len(board))
-            if nxt is None:
-                notes.append("Outs need the flop (or flop and turn) on the board.")
-            else:
-                outs_hit = nxt
-                notes.append(f"{n_outs} outs: {nxt:.1%} on the next card"
-                             + (f", {river:.1%} by the river" if river is not None else ""))
-
         can_sim = len(hole) == 2 and len(board) in (0, 3, 4, 5)
+        auto = can_sim and len(board) in (3, 4)
+        if auto:
+            key = (tuple(hole), tuple(board), opps.get())
+            if key != spot[0]:
+                spot[0], outs_manual[0] = key, False
+        else:
+            spot[0] = None
+            if outs_auto[0]:        # a count from cards no longer on the table
+                outs.set(0)
+                outs_auto[0] = False
+        set_marks()
+
+        def outs_note(n):
+            nxt, river = outs_probability(n, len(board))
+            if not n:
+                return None, None
+            if nxt is None:
+                return "Outs need the flop (or flop and turn) on the board.", None
+            return (f"{n} outs: {nxt:.1%} on the next card"
+                    + (f", {river:.1%} by the river" if river is not None else "")), nxt
+
+        notes = []
         if (hole or board) and not can_sim:
             notes.append("Pick both hole cards, and 0, 3, 4 or 5 board cards, to see your equity.")
-        detail.configure(text="   ·   ".join(notes))
+
+        def show_notes(n):
+            text, hit = outs_note(n)
+            detail.configure(text="   ·   ".join(([text] if text else []) + notes))
+            return hit
+
+        # A count from the cards waits until the new one is ready.
+        outs_hit = show_notes(0 if auto and not outs_manual[0] else outs.get())
+        outs_hint.configure(text="set by hand" if outs_manual[0] else
+                            "counting…" if auto else "optional")
 
         def fallback():
             if not call:
@@ -578,6 +673,23 @@ def run_gui():
                     draw_banner("CHECK", T["call"], f"{eq:.1%} to win",
                                 "Nothing to call.", eq, 0.0)
             root.after(0, done)
+            if not auto:
+                return
+
+            # Then try every possible next card, to light up the outs.
+            per_card = next_card_equities(hole, board, n_opps, stop=lambda: run_id[0] != me)
+
+            def marked():
+                if run_id[0] != me or not per_card:
+                    return
+                outs_, helps = classify_next_cards(per_card, eq, needed)
+                set_marks(per_card, outs_, helps)
+                if not outs_manual[0]:
+                    outs.set(len(outs_))
+                    outs_auto[0] = True
+                    show_notes(len(outs_))
+                    outs_hint.configure(text="from your cards")
+            root.after(0, marked)
 
         threading.Thread(target=work, daemon=True).start()
 

@@ -26,11 +26,13 @@ You only have to do this once. The Mac build runs on Apple Silicon Macs (M1 and 
 | To call | Type what you would put in |
 | Your cards | Optional. Click cards in the deck to fill your hand, then the flop, turn and river in order. The gold slot is filled next. Click a slot, or the card again, to take it back |
 | Opponents | Use **−** and **+** to set how many players are still in the hand |
-| Outs | Optional. Use **−** and **+**, or a preset: flush draw (9), open-ended straight draw (8), gutshot (4) |
+| Outs | Counted for you on the flop and turn (see below). Before that, or to override the count, use **−** and **+** or a preset: flush draw (9), open-ended straight draw (8), gutshot (4) |
 
 Drag the window bigger and the cards and text grow with it. The results update as you go. There is no button to press. A big banner shows **CALL** (green) or **FOLD** (red), with a bar comparing your equity to the equity you need.
 
 ## What you get back
+
+- **Your outs, highlighted**: on the flop and turn, the app tries every card that could come next. Cards that put you ahead turn **gold**, and cards that help but not enough turn **green**. Point at a card to see your chance to win if it comes. The gold cards are your outs, and the app counts them for you.
 
 - **Pot odds** and the **equity you need** to break even: call ÷ (pot + call).
 - **Outs**: the exact chance of hitting on the next card and by the river.
