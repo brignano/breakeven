@@ -49,3 +49,19 @@ def test_card_picker_helpers():
     assert next_empty_slot([1, None, None], 0) == 1
     assert next_empty_slot([None, 1, 2], 2) == 0                 # wraps round
     assert next_empty_slot([1, 2, 3], 1) == 1                    # all full: stay
+
+
+def test_next_card_highlights():
+    from pot_odds import classify_next_cards, next_card_equities
+    rng = random.Random(3)
+    hole, board = p("Ah Kh"), p("Qh Jh 2c")
+    eq = next_card_equities(hole, board, 1, 300, rng)
+    assert len(eq) == 47 and not set(eq) & set(hole + board)
+    assert eq[p("Th")[0]] == 1.0                                  # royal flush
+    current = simulate_equity(hole, board, 1, 3000, rng)
+    outs, helps = classify_next_cards(eq, current, 1 / 3)
+    hearts = {c for c in p("2h 3h 4h 5h 6h 7h 8h 9h Th")}
+    assert hearts <= outs                                         # every flush card
+    assert not outs & helps
+    assert next_card_equities(hole, [], 1) == {}                  # nothing preflop
+    assert next_card_equities(hole, board, 1, stop=lambda: True) == {}
