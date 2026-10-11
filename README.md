@@ -28,11 +28,11 @@ You only have to do this once. The Mac build runs on Apple Silicon Macs (M1 and 
 | Opponents | Use **−** and **+** to set how many players are still in the hand |
 | Outs | Counted for you on the flop and turn (see below). Before that, or to override the count, use **−** and **+** or a preset: flush draw (9), open-ended straight draw (8), gutshot (4) |
 
-Drag the window bigger and the cards and text grow with it. The results update as you go. There is no button to press. A big banner shows **CALL** (green) or **FOLD** (red), with a bar comparing your equity to the equity you need.
+The window opens at a size that fits your screen. Drag it bigger or smaller, or maximize it, and the cards and text scale with it. The results update as you go. There is no button to press. A big banner shows **CALL** (green) or **FOLD** (red), with a bar comparing your equity to the equity you need.
 
 ## What you get back
 
-- **Your outs and the danger cards, highlighted**: on the flop and turn, the app tries every card that could come next. Cards that put you ahead turn **gold**, and cards that help but not enough turn **green**. Cards that help your opponents turn **red**: ones that drop your chance to win by 10 points, or by 5 when that turns a call into a fold (the third flush card, the card that fills a straight). Point at a card to see your chance to win if it comes, and how far it moves. The gold cards are your outs, and the app counts them for you.
+- **Your outs and the danger cards, highlighted**: on the flop and turn, the app tries every card that could come next. Cards that put you ahead turn **gold**, and cards that help but not enough turn **green**. Cards that help your opponents turn **red**: ones that leave you 10 points worse off than a typical next card, or 5 points when that turns a call into a fold (the third flush card, the card that fills a straight). Every card is measured against a typical next card, not against your chance right now, so a blank turn that just uses up one of your draws isn't flagged. Point at a card to see your chance to win if it comes, next to the chance after a typical card. The gold cards are your outs, and the app counts them for you.
 
 - **Pot odds** and the **equity you need** to break even: call ÷ (pot + call).
 - **Outs**: the exact chance of hitting on the next card and by the river.
