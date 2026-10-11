@@ -54,7 +54,7 @@ pip install pytest && pytest -q   # run the tests
 
 ## Code signing policy
 
-We have applied to [SignPath Foundation](https://signpath.org) for free code signing of the Windows app. Until it's approved, releases are unsigned (see **First launch** above). Once approved: free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org).
+The Windows app is being set up for free code signing through [SignPath Foundation](https://signpath.org). Until that is approved, releases are unsigned (see **First launch** above). Once approved: free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org).
 
 - **Committers and approvers:** [@brignano](https://github.com/brignano)
 - Every release is built from this repository by GitHub Actions (`.github/workflows/build.yml`). Nothing built on a personal computer is signed.
