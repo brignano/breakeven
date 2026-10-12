@@ -6,7 +6,7 @@ A desktop helper for Texas Hold'em. It starts with a pot odds calculator: enter 
 
 Go to **Releases** on the right side of this page and download the latest version:
 
-- **Windows:** `PokerHelper-windows.zip`. Unzip it, open the `Poker Helper` folder, and double-click `Poker Helper.exe`. Keep the `_internal` folder next to it; the app needs it.
+- **Windows:** `PokerHelper-windows.zip`. Unzip it and double-click `Poker Helper.exe`.
 - **Mac:** `PokerHelper-mac.zip`. Unzip it and drag `Poker Helper` into Applications.
 
 You don't need to install Python or anything else.
