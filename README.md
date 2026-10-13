@@ -52,13 +52,9 @@ pip install pytest && pytest -q   # run the tests
 
 **Releasing:** in the Actions tab, open **build**, click **Run workflow**, and enter a version such as `v0.2.0`. You can also push a tag with that name. Either way, GitHub Actions runs the tests, builds the Windows and Mac apps with PyInstaller, and attaches both zips to a release. Every push to `main` also builds them, and you can download those builds from the Actions run.
 
-## Code signing policy
+## Code signing
 
-The Windows app is being set up for free code signing through [SignPath Foundation](https://signpath.org). Until that is approved, releases are unsigned (see **First launch** above). Once approved: free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org).
-
-- **Committers and approvers:** [@brignano](https://github.com/brignano)
-- Every release is built from this repository by GitHub Actions (`.github/workflows/build.yml`). Nothing built on a personal computer is signed.
-- Each signing request is approved by hand by an approver.
+Releases are unsigned for now (see **First launch** above). Every release is built from this repository by GitHub Actions (`.github/workflows/build.yml`), so you can check exactly what went into it.
 
 **Privacy:** this program will not transfer any information to other networked systems unless specifically requested by the user or the person installing or operating it. It makes no network connections at all.
 
