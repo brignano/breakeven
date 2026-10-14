@@ -24,6 +24,7 @@ You only have to do this once. The Mac build runs on Apple Silicon Macs (M1 and 
 |---|---|
 | Pot | Type everything in the middle, **including the bet you're facing** |
 | To call | Type what you would put in |
+| Blinds | Small and big blind (1 / 2 to start). **+BB** and **−BB** under the pot and to call step them a big blind at a time, and the amounts are shown in big blinds too. **New hand** puts both blinds in the pot, sets to call to the big blind and clears the cards |
 | Your cards | Optional. Click cards in the deck to fill your hand, then the flop, turn and river in order. The gold slot is filled next. Click a slot, or the card again, to take it back |
 | Opponents | Use **−** and **+** to set how many players are still in the hand |
 | Outs | Counted for you on the flop and turn (see below). Before that, or to override the count, use **−** and **+** or a preset: flush draw (9), open-ended straight draw (8), gutshot (4) |
