@@ -4,8 +4,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from pot_odds import (call_ev, card_label, hand_rank, next_empty_slot, outs_probability,
-                      parse_cards as p, pot_odds, simulate_equity)
+from pot_odds import (call_ev, card_label, format_amount, hand_rank, next_empty_slot,
+                      outs_probability, parse_cards as p, pot_odds, simulate_equity,
+                      step_amount)
 
 
 def test_hand_rank():
@@ -95,3 +96,12 @@ def test_blanks_are_not_danger_cards():
     outs, _helps, dangers = classify_next_cards(eq, 1 / 3)
     assert not dangers
     assert set(p("7d 7c 6d 6c")) <= outs
+
+
+def test_blind_steps():
+    assert step_amount(100, 2, 1) == 102
+    assert step_amount(3, 2, -1) == 1
+    assert step_amount(1, 2, -1) == 0          # never below zero
+    assert format_amount(step_amount(0.5, 0.25, 3)) == "1.25"
+    assert format_amount(12.0) == "12"
+    assert format_amount(0.1 + 0.2) == "0.3"

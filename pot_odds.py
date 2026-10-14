@@ -43,6 +43,16 @@ def call_ev(pot, call, equity):
     return equity * (pot + call) - call
 
 
+def step_amount(amount, blind, times):
+    """`amount` moved by `times` blinds, never below zero."""
+    return max(0.0, amount + times * blind)
+
+
+def format_amount(value):
+    """An amount as you'd type it: 12 rather than 12.0, at most two decimals."""
+    return f"{value:.2f}".rstrip("0").rstrip(".")
+
+
 def outs_probability(outs, board_cards):
     """Exact chance of hitting one of `outs` by the river.
 
@@ -315,16 +325,24 @@ def run_gui():
     top.pack(fill="x")
     fields = {}
 
+    def entry(parent, var, width, size):
+        return tk.Entry(parent, textvariable=var, width=width, font=font(size, "bold"),
+                        fg=T["text"], bg=T["felt_dark"], insertbackground=T["text"],
+                        relief="flat", highlightthickness=1,
+                        highlightbackground=T["felt_line"], highlightcolor=T["gold"])
+
     def amount(col, caption, key, default):
         box = tk.Frame(top, bg=T["felt"])
         box.grid(row=0, column=col, sticky="w", padx=(0, 18))
         label(box, caption, 9, "bold").pack(anchor="w")
         var = tk.StringVar(value=default)
-        tk.Entry(box, textvariable=var, width=7, font=font(16, "bold"), fg=T["text"],
-                 bg=T["felt_dark"], insertbackground=T["text"], relief="flat",
-                 highlightthickness=1, highlightbackground=T["felt_line"],
-                 highlightcolor=T["gold"]).pack(anchor="w", ipady=3)
+        entry(box, var, 7, 16).pack(anchor="w", ipady=3)
         fields[key] = var
+        # Step the amount a big blind at a time.
+        steps = tk.Frame(box, bg=T["felt"])
+        steps.pack(anchor="w", pady=(4, 0))
+        pill(steps, "−BB", lambda: bump(key, -1), 9).pack(side="left")
+        pill(steps, "+BB", lambda: bump(key, 1), 9).pack(side="left", padx=(4, 0))
 
     amount(0, "POT (INCL. THEIR BET)", "pot", "100")
     amount(1, "TO CALL", "call", "50")
@@ -365,6 +383,18 @@ def run_gui():
     odds_big.pack(anchor="e")
     odds_small = label(odds_box, "", 9)
     odds_small.pack(anchor="e")
+
+    # ---- Blinds -----------------------------------------------------------
+    blinds_row = tk.Frame(felt, bg=T["felt"])
+    blinds_row.pack(fill="x", pady=(10, 0))
+    label(blinds_row, "BLINDS", 9, "bold").pack(side="left", padx=(0, 8))
+    blinds = {"sb": tk.StringVar(value="1"), "bb": tk.StringVar(value="2")}
+    entry(blinds_row, blinds["sb"], 5, 12).pack(side="left", ipady=1)
+    label(blinds_row, "/", 12, "bold").pack(side="left", padx=4)
+    entry(blinds_row, blinds["bb"], 5, 12).pack(side="left", ipady=1)
+    pill(blinds_row, "New hand", lambda: new_hand()).pack(side="left", padx=(12, 0))
+    blinds_hint = label(blinds_row, "", 9, anchor="e")
+    blinds_hint.pack(side="right")
 
     # ---- Card slots -------------------------------------------------------
     slots = [None] * 7
@@ -590,14 +620,43 @@ def run_gui():
         active[0] = 0
         redraw_cards()
 
-    def num(key, name):
-        raw = fields[key].get().strip().replace("$", "").replace(",", "")
+    def num(key, name, source=fields):
+        raw = source[key].get().strip().replace("$", "").replace(",", "")
         if not raw:
             raise ValueError(f"Fill in the {name}.")
         try:
             return float(raw)
         except ValueError:
             raise ValueError(f"The {name} should be a number.") from None
+
+    def blind(key):
+        """A blind as a number, or None while it isn't a positive one."""
+        try:
+            value = num(key, "blind", blinds)
+        except ValueError:
+            return None
+        return value if value > 0 else None
+
+    def bump(key, times):
+        bb = blind("bb")
+        if bb is None:
+            blinds_hint.configure(text="Set the big blind first.", fg=T["gold"])
+            return
+        try:
+            current = num(key, "")
+        except ValueError:
+            current = 0.0
+        fields[key].set(format_amount(step_amount(current, bb, times)))
+
+    def new_hand():
+        """Preflop with the blinds posted: the pot holds both, and you face the big blind."""
+        sb, bb = blind("sb"), blind("bb")
+        if sb is None or bb is None:
+            blinds_hint.configure(text="Set both blinds first.", fg=T["gold"])
+            return
+        fields["pot"].set(format_amount(sb + bb))
+        fields["call"].set(format_amount(bb))
+        clear_cards()
 
     # Results update as you go. Each run gets a number, so a slow simulation
     # that finishes after a newer one started is thrown away.
@@ -636,6 +695,10 @@ def run_gui():
         needed = pot_odds(pot, call)
         odds_big.configure(text=f"{pot / call:.2f} : 1" if call else "free")
         odds_small.configure(text=f"need {needed:.1%} equity")
+        bb = blind("bb")
+        blinds_hint.configure(
+            text=(f"pot {format_amount(pot / bb)} BB  ·  call {format_amount(call / bb)} BB"
+                  if bb else "Type the blinds to step by big blinds."), fg=T["muted"])
 
         hole = [c for c in slots[:2] if c is not None]
         board = [c for c in slots[2:] if c is not None]
@@ -730,7 +793,7 @@ def run_gui():
 
         threading.Thread(target=work, daemon=True).start()
 
-    for var in fields.values():
+    for var in (*fields.values(), *blinds.values()):
         var.trace_add("write", lambda *_: schedule())
     def apply_scale():
         for (size, _weight), f in fonts.items():
