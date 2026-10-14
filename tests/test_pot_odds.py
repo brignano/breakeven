@@ -4,7 +4,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from pot_odds import (call_ev, card_label, format_amount, hand_rank, next_empty_slot,
+from pot_odds import (call_ev, card_label, format_amount, hand_rank, icon_path, next_empty_slot,
                       outs_probability, parse_cards as p, pot_odds, simulate_equity,
                       step_amount)
 
@@ -105,3 +105,9 @@ def test_blind_steps():
     assert format_amount(step_amount(0.5, 0.25, 3)) == "1.25"
     assert format_amount(12.0) == "12"
     assert format_amount(0.1 + 0.2) == "0.3"
+
+
+def test_icon_ships_with_the_app():
+    # The window loads this PNG; the build workflow bundles it next to the app.
+    assert icon_path().is_file()
+    assert icon_path().read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"

@@ -44,7 +44,12 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install pyinstaller
-      - run: pyinstaller --windowed --onefile --name "Poker Helper" pot_odds.py
+      # --icon is the .exe / .app icon; --add-data ships the PNG the window uses.
+      - run: >
+          pyinstaller --windowed --onefile --name "Poker Helper"
+          --icon ${{ runner.os == 'Windows' && 'assets/icon.ico' || 'assets/icon.icns' }}
+          --add-data "assets/icon.png:assets"
+          pot_odds.py
 
       - name: Package (Windows)
         if: runner.os == 'Windows'
