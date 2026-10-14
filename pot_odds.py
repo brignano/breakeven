@@ -16,6 +16,7 @@ Then it compares the equity you have against the equity you need.
 
 import random
 import statistics
+import sys
 from collections import Counter
 from itertools import combinations
 
@@ -265,6 +266,12 @@ def _rounded_rect(cv, x1, y1, x2, y2, r, **kw):
     return cv.create_polygon(pts, smooth=True, **kw)
 
 
+def icon_path():
+    """The window icon, next to this file or inside a PyInstaller bundle."""
+    from pathlib import Path
+    return Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent)) / "assets" / "icon.png"
+
+
 def run_gui():
     import queue
     import threading
@@ -274,6 +281,11 @@ def run_gui():
     T = THEME
     root = tk.Tk()
     root.title("Poker Helper")
+    try:
+        root.icon = tk.PhotoImage(file=str(icon_path()))  # keep a reference so Tk keeps the image
+        root.iconphoto(True, root.icon)
+    except tk.TclError:
+        pass  # No icon file (or no PNG support): the window still works.
     root.configure(bg=T["bg"])
     root.minsize(1, 1)
 

@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <!-- Poker Helper's icon: a chip on the felt, in the app's own THEME colours
+       (felt #17573a, felt_dark #11432c, gold #f2c14e, card #fbfaf6).
+       icon.png, icon.ico and icon.icns are rendered from this file. -->
+  <rect width="64" height="64" rx="14" fill="#17573a"/>
+  <circle cx="32" cy="32" r="23" fill="#f2c14e"/>
+  <g fill="#fbfaf6">
+    <rect x="29" y="9" width="6" height="7" rx="1"/>
+    <rect x="29" y="48" width="6" height="7" rx="1"/>
+    <rect x="9" y="29" width="7" height="6" rx="1"/>
+    <rect x="48" y="29" width="7" height="6" rx="1"/>
+  </g>
+  <circle cx="32" cy="32" r="15" fill="#11432c"/>
+  <path fill="#fbfaf6" d="M32 21c-4 5.5-9 8.2-9 12.6 0 3 2.3 5 5 5 1.5 0 2.7-.6 3.3-1.4-.3 2.7-1.3 4.3-3 5.6h7.4c-1.7-1.3-2.7-2.9-3-5.6.6.8 1.8 1.4 3.3 1.4 2.7 0 5-2 5-5 0-4.4-5-7.1-9-12.6z"/>
+</svg>
