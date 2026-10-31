@@ -259,3 +259,49 @@ def test_grades():
     assert grade("folds", 0.20, 0.33) == ("success", "✓ good fold")
     assert grade("folds", 0.40, 0.33)[0] == "attention"
     assert grade("raises", 0.9, 0.1)[0] == "neutral"
+
+
+def test_player_tendencies():
+    from breakeven import parse_hand_histories, player_stats
+    hands = parse_hand_histories(HISTORY)
+    assert set(hands[0].players) == {"player1", "Hero", "btn guy", "sb player", "bbplayer"}
+    stats = {s.name: s for s in player_stats(hands + hands)}    # repeats count once
+    hero, p1 = stats["Hero"], stats["player1"]
+    assert (hero.hands, hero.vpip, hero.pfr, hero.aggression) == (2, 0.5, 0.0, 1.0)
+    assert (p1.hands, p1.vpip, p1.pfr, p1.aggression) == (1, 1.0, 1.0, 2.0)   # bet, call, bet
+    assert stats["sb player"].vpip == 0                         # a posted blind isn't a choice
+    assert stats["alice"].aggression is None                    # never saw a flop
+    assert "player6" not in stats                               # sitting out
+
+
+def test_player_styles():
+    from breakeven import MIN_HANDS, PlayerStats, player_style
+    assert player_style(PlayerStats("a", MIN_HANDS - 1, 0.5, 0.4, 3))[0] == "Not enough hands"
+    assert player_style(PlayerStats("a", 100, 0.18, 0.15, 2.5))[0] == "Tight-aggressive"
+    assert player_style(PlayerStats("a", 100, 0.40, 0.30, 2.0))[0] == "Loose-aggressive"
+    assert player_style(PlayerStats("a", 100, 0.15, 0.03, 0.5))[0] == "Tight-passive"
+    assert player_style(PlayerStats("a", 100, 0.45, 0.05, 0.6))[0] == "Loose-passive"
+    assert player_style(PlayerStats("a", 100, 0.45, 0.05, None))[0] == "Loose-passive"
+    assert player_style(PlayerStats("a", 100, 0.0, 0.0, None))[0] == "Tight-passive"
+
+
+def test_watcher_picks_up_new_hands(tmp_path):
+    import time
+    from breakeven import HandWatcher, split_hand_histories
+    first, second = split_hand_histories(HISTORY)[:2]
+    table = tmp_path / "Hero" / "HH20250101 Alcyone II.txt"
+    table.parent.mkdir()
+    table.write_text(first + "\n\n\n", "utf-8")
+
+    watcher = HandWatcher([tmp_path])
+    assert [h.hand_id for h in watcher.poll()] == ["254343322345"]   # played just now
+    assert watcher.poll() == []                                       # nothing new
+    with table.open("a", encoding="utf-8") as f:                     # PokerStars adds a hand
+        f.write(second + "\n\n\n")
+    assert [h.hand_id for h in watcher.poll()] == ["254343322400"]
+    known, session = watcher.snapshot()
+    assert len(known) == 2 and len(session) == 2
+
+    # Old history counts toward reads of players, not toward this session.
+    later = HandWatcher([tmp_path], now=time.time() + 10 ** 6)
+    assert later.poll() == [] and len(later.snapshot()[0]) == 2

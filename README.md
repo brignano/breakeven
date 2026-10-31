@@ -46,18 +46,20 @@ It follows your system's light or dark mode. To pick one yourself, start it with
 
 The verdict uses pot odds alone. It doesn't count implied odds (what you could win on later streets) or your read on the other players' ranges.
 
-## Review your PokerStars hands
+## Track and review your PokerStars hands
 
-After a session, see whether the calls and folds you made were priced right.
+Start Breakeven and it keeps track for you. PokerStars saves each hand to a text file a few seconds after the hand ends, and Breakeven picks those files up every few seconds from where PokerStars keeps them:
 
-1. Click **Open hand history…**. It opens in the folder where PokerStars saves your hands:
-   - **Windows:** `%LOCALAPPDATA%\PokerStars\HandHistory\<your name>`
-   - **Mac:** `~/Library/Application Support/PokerStars/HandHistory/<your name>`
+- **Windows:** `%LOCALAPPDATA%\PokerStars\HandHistory\<your name>`
+- **Mac:** `~/Library/Application Support/PokerStars/HandHistory/<your name>`
 
-   PokerStars saves them by default. If the folder is empty, turn on **Settings → Playing History → Hand History** in PokerStars. You can pick several files at once.
-2. Or copy a hand from PokerStars' hand replayer or a forum post, and click **Paste hand**.
+The line under the title shows what it has: *Tracking PokerStars · 42 hands this session · 3,180 in your history*. Hands from the 12 hours before you opened the app count as this session too, so you can play first and open Breakeven afterwards. If it says the folder wasn't found, turn on **Settings → Playing History → Hand History** in PokerStars. To use a different folder, start Breakeven with `BREAKEVEN_HAND_HISTORY=/path/to/folder`.
 
-A review window lists every spot where you faced a bet: the street, your cards and the board, the call and the pot, the equity you needed, your equity, and what you did. Each spot gets a price check:
+Click **Review session** to see the session's hands. You can also use **Open file…** for any hand history file, or copy a hand from PokerStars and click **Paste hand**.
+
+### Your spots
+
+Every spot where you faced a bet: the street, your cards and the board, the call and the pot, the equity you needed, your equity, and what you did. Each spot gets a price check:
 
 | Check | Means |
 |---|---|
@@ -66,9 +68,28 @@ A review window lists every spot where you faced a bet: the street, your cards a
 | **▲ fold had the price** | You folded with enough equity against random hands. Players who bet usually hold better than random hands, so it's worth a look, not a mistake |
 | **✕ called short** | On the river you called without the price. Nothing is left to come, so this one cost you |
 
-Select a row to load that spot into the calculator: the pot, the call, the blinds, the players left, your cards and the board. You get the full verdict, with outs and danger cards. Only Hold'em hands are read.
+Select a row to load that spot into the calculator: the pot, the call, the blinds, the players left, your cards and the board.
 
-**Use it after you play, not during.** PokerStars and most other sites ban software that advises you while a hand is in progress (real-time assistance), and close accounts for it. Breakeven only reads hands that have finished, and only when you open them. Don't keep it open beside a real-money table.
+### Players
+
+Everyone you played with this session, read from every hand of theirs in your history:
+
+| Column | Means |
+|---|---|
+| **Plays** | Share of hands they put money in by choice. Posting a blind doesn't count |
+| **Raises** | Share of hands they raised before the flop |
+| **Aggression** | Bets and raises per call after the flop. Above 1.5 counts as aggressive |
+| **Style** | Tight or loose (playing at least 28% of hands is loose), and passive or aggressive, with what that usually means for you |
+
+Under 20 hands, the numbers are mostly noise, so the player is greyed out and marked *Not enough hands*. Only hands you were dealt into are counted, and nothing leaves your computer.
+
+Only Hold'em hands are read.
+
+### Playing by the rules
+
+Breakeven reads only finished hands from the files PokerStars itself writes. It never reads the PokerStars window, its memory, or its logs, and it never looks at a hand while it's being played.
+
+Poker sites ban software that advises you during a hand (real-time assistance), and they close accounts for it. Trackers that build player stats from your own hand histories are a long-standing, accepted category, but PokerStars keeps its own list of approved tools, and Breakeven isn't on it. Before you keep Breakeven open beside a real-money table, check PokerStars' current rules on third-party tools. If in doubt, review after you play.
 
 ## For developers
 
