@@ -284,6 +284,17 @@ class Hand:
     net: float = 0.0        # what you won, less what you put in
     currency: str = ""      # $, € or £ at a cash table; "" for tournament chips
     decisions: list = field(default_factory=list)
+    # Everyone dealt in: name -> PlayerHand, for reading tendencies.
+    players: dict = field(default_factory=dict)
+
+
+@dataclass
+class PlayerHand:
+    """What one player did in one hand."""
+    vpip: bool = False      # put money in preflop by choice (not just a blind)
+    pfr: bool = False       # raised (or opened with a bet) preflop
+    aggressive: int = 0     # bets and raises after the flop
+    calls: int = 0          # calls after the flop
 
 
 def split_hand_histories(text):
@@ -327,6 +338,7 @@ def parse_hand(text):
     total, invested = 0.0, Counter()
     won, decisions = Counter(), []
     acting = False
+    seen = {}               # name -> PlayerHand
 
     def put_in(name, amount, live=True):
         nonlocal total
@@ -387,6 +399,14 @@ def parse_hand(text):
                         head[1], street_name, list(hole), list(board),
                         round(total, 2), round(to_call, 2), max(1, len(in_hand) - 1),
                         verb, sb, bb))
+            ph = seen.setdefault(name, PlayerHand())
+            if street_name == "Preflop":
+                ph.vpip |= verb in ("calls", "bets", "raises")
+                ph.pfr |= verb in ("bets", "raises")
+            elif verb in ("bets", "raises"):
+                ph.aggressive += 1
+            elif verb == "calls":
+                ph.calls += 1
             if verb == "folds":
                 folded.add(name)
             elif m := re.fullmatch(rf"(?:calls|bets) {_AMOUNT}", what):
@@ -396,8 +416,9 @@ def parse_hand(text):
 
     if hero is None or not hole:
         return None
+    players = {n: seen.get(n, PlayerHand()) for n in dealt}
     return Hand(head[1], hero, hole, sb, bb, round(won[hero] - invested[hero], 2), currency,
-                decisions)
+                decisions, players)
 
 
 def parse_hand_histories(text):
@@ -426,14 +447,124 @@ def grade(action, equity, needed, river=False):
 def hand_history_dirs():
     """Where PokerStars keeps hand histories on this computer, if it does."""
     from pathlib import Path
+    if os.environ.get("BREAKEVEN_HAND_HISTORY"):       # another folder, by choice
+        folder = Path(os.environ["BREAKEVEN_HAND_HISTORY"]).expanduser()
+        return [folder] if folder.is_dir() else []
     if sys.platform == "win32":
-        bases = [Path(os.environ.get("LOCALAPPDATA", ""))]
+        bases = [Path(os.environ["LOCALAPPDATA"])] if os.environ.get("LOCALAPPDATA") else []
     elif sys.platform == "darwin":
         bases = [Path.home() / "Library" / "Application Support"]
     else:
         bases = []
     return [d for base in bases if base.is_dir()
             for d in sorted(base.glob("PokerStars*/HandHistory")) if d.is_dir()]
+
+
+class HandWatcher:
+    """Picks up hands as PokerStars writes them to its hand history folder.
+
+    PokerStars adds each hand to its table's file a few seconds after the
+    hand ends, so everything here is a finished hand. `poll()` re-reads only
+    files that grew, and keeps each hand once.
+    """
+
+    def __init__(self, dirs, session_window=12 * 3600, now=None):
+        import threading
+        import time
+        self.lock = threading.Lock()  # poll() may run on a worker thread
+        self.dirs = list(dirs)
+        self.sizes = {}
+        self.hands = {}             # hand id -> Hand, everything ever read
+        self.session = []           # hands from this session, in order
+        self.started = now if now is not None else time.time()
+        # Hands in files touched shortly before launch count as this
+        # session too, so opening the app after playing still finds them.
+        self.window = session_window
+        self.first = True
+
+    def poll(self):
+        """Read new hands. Returns the ones that joined this session."""
+        new, found = [], {}
+        for folder in self.dirs:
+            for path in sorted(folder.rglob("*.txt")):
+                try:
+                    stat = path.stat()
+                    if self.sizes.get(path) == stat.st_size:
+                        continue
+                    text = path.read_text("utf-8-sig", errors="replace")
+                except OSError:
+                    continue            # moved or locked while PokerStars writes
+                self.sizes[path] = stat.st_size
+                recent = not self.first or stat.st_mtime >= self.started - self.window
+                for hand in parse_hand_histories(text):
+                    if hand.hand_id in self.hands or hand.hand_id in found:
+                        continue
+                    found[hand.hand_id] = hand
+                    if recent:
+                        new.append(hand)
+        self.first = False
+        with self.lock:
+            self.hands.update(found)
+            self.session.extend(new)
+        return new
+
+    def snapshot(self):
+        """(every hand by id, this session's hands), safe from any thread."""
+        with self.lock:
+            return dict(self.hands), list(self.session)
+
+
+@dataclass
+class PlayerStats:
+    name: str
+    hands: int
+    vpip: float             # share of hands they chose to play
+    pfr: float              # share of hands they raised before the flop
+    aggression: float       # postflop bets and raises per call; None if no actions
+
+
+# Fewer hands than this and the numbers are mostly noise.
+MIN_HANDS = 20
+
+
+def player_stats(hands):
+    """Tendencies for everyone in `hands` (each hand counted once), most hands first."""
+    totals = {}
+    for hand in {h.hand_id: h for h in hands}.values():
+        for name, ph in hand.players.items():
+            t = totals.setdefault(name, [0, 0, 0, 0, 0])
+            t[0] += 1
+            t[1] += ph.vpip
+            t[2] += ph.pfr
+            t[3] += ph.aggressive
+            t[4] += ph.calls
+    stats = [PlayerStats(name, n, v / n, p / n,
+                         (a / c if c else float("inf")) if a or c else None)
+             for name, (n, v, p, a, c) in totals.items()]
+    return sorted(stats, key=lambda s: (-s.hands, s.name))
+
+
+def player_style(stats):
+    """A plain-words read of a player: (style, what it usually means).
+
+    Loose plays 28% of hands or more; aggressive bets or raises at least
+    1.5 times per call after the flop. Rules of thumb, not a verdict.
+    """
+    if stats.hands < MIN_HANDS:
+        return "Not enough hands", f"Under {MIN_HANDS} hands: too early to tell."
+    loose = stats.vpip >= 0.28
+    if stats.aggression is None:
+        # No bets or calls after the flop yet: judge by how often their
+        # preflop entries are raises.
+        aggressive = stats.vpip > 0 and stats.pfr >= 0.5 * stats.vpip
+    else:
+        aggressive = stats.aggression >= 1.5
+    return {
+        (False, True): ("Tight-aggressive", "Few hands, played hard. Respect their raises."),
+        (True, True): ("Loose-aggressive", "Many hands, lots of betting. Bets are often weaker."),
+        (False, False): ("Tight-passive", "Few hands, few bets. A bet usually means strength."),
+        (True, False): ("Loose-passive", "Calls a lot, rarely bets. Value-bet; bluff less."),
+    }[loose, aggressive]
 
 
 # --------------------------------------------------------------------------
@@ -663,9 +794,15 @@ def run_gui():
     label(head, APP_NAME, 17, "bold", fg=T["ink"]).pack(side="left")
     label(head, "pot odds & equity", 10, fg=T["slate"]).pack(side="left", padx=10, pady=(6, 0))
     button(head, "Paste hand", lambda: paste_hands()).pack(side="right")
-    button(head, "Open hand history…", lambda: open_histories()).pack(side="right", padx=(0, 6))
-    # Which reviewed hand is loaded, shown only while one is.
-    review_note = label(outer, "", 9, fg=T["ink-soft"], anchor="w")
+    button(head, "Open file…", lambda: open_histories()).pack(side="right", padx=(0, 6))
+    button(head, "Review session", lambda: review_session()).pack(side="right", padx=(0, 6))
+    # Hand tracking on the left; which reviewed hand is loaded on the right.
+    status_row = tk.Frame(outer, bg=T["bg"])
+    status_row.pack(fill="x", pady=(0, 8))
+    tracking = label(status_row, "", 9, fg=T["slate"], anchor="w")
+    tracking.pack(side="left")
+    review_note = label(status_row, "", 9, fg=T["ink-soft"], anchor="e")
+    review_note.pack(side="right")
 
     def draw_header_mark():
         w, h = px(30), px(18)
@@ -1193,11 +1330,49 @@ def run_gui():
     PAST = {"calls": "called", "folds": "folded", "raises": "raised"}
 
     def show_review_note(text):
-        if text:
-            review_note.configure(text=text)
-            review_note.pack(fill="x", pady=(0, 8), before=panel)
+        review_note.configure(text=text)
+
+    # ---- Tracking: PokerStars writes each finished hand to its hand history
+    # folder; a worker thread picks them up every few seconds.
+    watcher = HandWatcher(hand_history_dirs())
+
+    def show_tracking(reading=False):
+        if not watcher.dirs:
+            tracking.configure(text="PokerStars hand history not found  ·  "
+                                    "open a file or paste a hand")
+        elif reading:
+            tracking.configure(text="Reading your PokerStars hand history…")
         else:
-            review_note.pack_forget()
+            known, session = watcher.snapshot()
+            tracking.configure(text=f"Tracking PokerStars  ·  {len(session)} hands "
+                                    f"this session  ·  {len(known):,} in your history")
+
+    def watch():
+        import time
+        while True:
+            try:
+                watcher.poll()
+            except Exception:       # a half-written file: try again next round
+                pass
+            results.put(show_tracking)
+            time.sleep(5)
+
+    show_tracking(reading=True)
+    if watcher.dirs:
+        threading.Thread(target=watch, daemon=True).start()
+
+    def review_session():
+        if not watcher.dirs:
+            messagebox.showinfo(APP_NAME, (
+                "Breakeven didn't find a PokerStars hand history folder on this computer. "
+                "In PokerStars, turn on Settings → Playing History → Hand History, or open a "
+                "hand history file yourself."), parent=root)
+        elif not watcher.snapshot()[1]:
+            messagebox.showinfo(APP_NAME, (
+                "No hands yet this session. Breakeven picks up each hand a few seconds after "
+                "PokerStars saves it."), parent=root)
+        else:
+            show_review(watcher.snapshot()[1], "This session")
 
     def open_histories():
         from pathlib import Path
@@ -1211,15 +1386,16 @@ def run_gui():
             initialdir=str(start) if start else None,
             filetypes=[("Hand histories", "*.txt"), ("All files", "*")])
         if paths:
-            show_review("\n\n".join(Path(p).read_text("utf-8-sig", errors="replace")
-                                    for p in paths))
+            show_review(parse_hand_histories("\n\n".join(
+                Path(p).read_text("utf-8-sig", errors="replace") for p in paths)),
+                f"{len(paths)} file{'s' * (len(paths) > 1)}")
 
     def paste_hands():
         try:
             text = root.clipboard_get()
         except tk.TclError:
             text = ""
-        show_review(text)
+        show_review(parse_hand_histories(text), "Pasted")
 
     def load_decision(d):
         """Put a reviewed spot into the calculator."""
@@ -1236,13 +1412,10 @@ def run_gui():
                          f"into {format_amount(d.pot)}")
         redraw_cards()
 
-    def show_review(text):
-        hands = parse_hand_histories(text)
+    def show_review(hands, source):
         spots = [d for h in hands for d in h.decisions]
-        if not spots:
+        if not hands:
             messagebox.showinfo(APP_NAME, (
-                f"Read {len(hands)} Hold'em hand{'s' * (len(hands) != 1)}, but none where you "
-                "faced a bet." if hands else
                 "No PokerStars Hold'em hands found. Open a hand history file, or copy a "
                 "hand from PokerStars and use Paste hand."), parent=root)
             return
@@ -1254,7 +1427,7 @@ def run_gui():
         win = tk.Toplevel(root, bg=T["bg"], padx=16, pady=14)
         review["win"] = win
         win.title(f"{APP_NAME} — review")
-        summary = f"{len(hands)} hands  ·  {len(spots)} spots facing a bet"
+        summary = f"{source}  ·  {len(hands)} hands  ·  {len(spots)} spots facing a bet"
         currencies = {h.currency for h in hands}
         if len(currencies) == 1:            # don't add chips to dollars
             net = sum(h.net for h in hands)
@@ -1262,7 +1435,8 @@ def run_gui():
             summary += (f"  ·  net {'+' if net >= 0 else '−'}{unit}{format_amount(abs(net))}"
                         + ("" if unit else " chips"))
         label(win, summary, 13, "bold", fg=T["ink"], anchor="w").pack(fill="x")
-        tally = label(win, "Grading…", 9, fg=T["slate"], fixed=True, anchor="w")
+        tally = label(win, "Grading…" if spots else "No spots where you faced a bet.", 9,
+                      fg=T["slate"], fixed=True, anchor="w")
         tally.pack(fill="x", pady=(2, 10))
 
         style = ttk.Style(win)
@@ -1279,23 +1453,68 @@ def run_gui():
         style.configure("Review.Vertical.TScrollbar", background=T["surface-active"],
                         troughcolor=T["bg"], bordercolor=T["bg"], arrowcolor=T["slate"],
                         lightcolor=T["surface-active"], darkcolor=T["surface-active"])
+        style.configure("Review.TNotebook", background=T["bg"], bordercolor=T["line"],
+                        lightcolor=T["bg"], darkcolor=T["bg"], tabmargins=0)
+        style.configure("Review.TNotebook.Tab", background=T["bg"], foreground=T["slate"],
+                        bordercolor=T["line"], lightcolor=T["bg"], darkcolor=T["bg"],
+                        padding=(12, 4), font=font(10, "bold"))
+        style.map("Review.TNotebook.Tab", background=[("selected", T["card"])],
+                  foreground=[("selected", T["ink"])],
+                  lightcolor=[("selected", T["card"])])
+
+        tabs = ttk.Notebook(win, style="Review.TNotebook")
+        tabs.pack(fill="both", expand=True)
+        spots_tab = tk.Frame(tabs, bg=T["card"])
+        players_tab = tk.Frame(tabs, bg=T["card"])
+        tabs.add(spots_tab, text="Your spots")
+        tabs.add(players_tab, text="Players")
+
+        def table(parent, columns, rows):
+            box = tk.Frame(parent, bg=T["bg"])
+            box.pack(fill="both", expand=True)
+            tree = ttk.Treeview(box, columns=[c for c, _, _ in columns], show="headings",
+                                style="Review.Treeview", height=min(16, max(rows, 1)),
+                                selectmode="browse")
+            for key, title, width in columns:
+                tree.heading(key, text=title, anchor="w")
+                tree.column(key, width=int(px(width)), anchor="w", stretch=key == columns[-1][0])
+            bar = ttk.Scrollbar(box, orient="vertical", command=tree.yview,
+                                style="Review.Vertical.TScrollbar")
+            tree.configure(yscrollcommand=bar.set)
+            tree.pack(side="left", fill="both", expand=True)
+            bar.pack(side="right", fill="y")
+            return tree
+
+        # Players: everyone at your tables, read from every hand Breakeven has
+        # of them (your whole history), not just these.
+        everyone = {**watcher.snapshot()[0], **{h.hand_id: h for h in hands}}.values()
+        here = {n for h in hands for n in h.players}
+        heroes = {h.hero for h in hands}
+        people = [p for p in player_stats(everyone) if p.name in here]
+        ptree = table(players_tab, [
+            ("name", "PLAYER", 140), ("hands", "HANDS", 55), ("vpip", "PLAYS", 55),
+            ("pfr", "RAISES", 60), ("af", "AGGRESSION", 85), ("style", "STYLE", 130),
+            ("read", "WHAT IT USUALLY MEANS", 300)], len(people))
+        ptree.tag_configure("few", foreground=T["slate"])
+        for p in people:
+            style_word, read = player_style(p)
+            af = ("—" if p.aggression is None else
+                  "all bets" if p.aggression == float("inf") else f"{p.aggression:.1f}")
+            ptree.insert("", "end", values=(
+                p.name + ("  (you)" if p.name in heroes else ""), p.hands, f"{p.vpip:.0%}",
+                f"{p.pfr:.0%}", af, style_word, read),
+                tags=("few",) if p.hands < MIN_HANDS else ())
+        label(players_tab, "Plays: share of hands they put money in by choice. Raises: share "
+                           "they raised before the flop. Aggression: bets and raises per call "
+                           f"after the flop. Under {MIN_HANDS} hands, these are mostly noise. "
+                           "Only hands you played are counted, and nothing leaves your computer.",
+              9, fg=T["slate"], anchor="w", justify="left",
+              wraplength=int(px(900))).pack(fill="x", padx=8, pady=8)
 
         columns = [("hand", "HAND", 120), ("street", "STREET", 70), ("cards", "CARDS", 150),
                    ("price", "CALL / POT", 120), ("need", "NEED", 60), ("equity", "EQUITY", 60),
                    ("you", "YOU", 60), ("grade", "PRICE CHECK", 150)]
-        box = tk.Frame(win, bg=T["bg"])
-        box.pack(fill="both", expand=True)
-        tree = ttk.Treeview(box, columns=[c for c, _, _ in columns], show="headings",
-                            style="Review.Treeview", height=min(16, len(spots)),
-                            selectmode="browse")
-        for key, title, width in columns:
-            tree.heading(key, text=title, anchor="w")
-            tree.column(key, width=int(px(width)), anchor="w", stretch=key == "grade")
-        bar = ttk.Scrollbar(box, orient="vertical", command=tree.yview,
-                            style="Review.Vertical.TScrollbar")
-        tree.configure(yscrollcommand=bar.set)
-        tree.pack(side="left", fill="both", expand=True)
-        bar.pack(side="right", fill="y")
+        tree = table(spots_tab, columns, len(spots))
         # Only the spots worth a second look are washed; a priced-right row
         # stays neutral and says so in words.
         for state in ("danger", "attention"):
@@ -1312,10 +1531,11 @@ def run_gui():
         tree.bind("<<TreeviewSelect>>",
                   lambda _e: tree.selection() and load_decision(spots[int(tree.selection()[0])]))
 
-        label(win, "Equity is against random hands and the price check uses pot odds alone, "
-                   "like the calculator. Select a row to load it into the calculator.",
+        label(spots_tab, "Equity is against random hands and the price check uses pot odds "
+                         "alone, like the calculator. Select a row to load it into the "
+                         "calculator.",
               9, fg=T["slate"], anchor="w", justify="left",
-              wraplength=int(px(800))).pack(fill="x", pady=(10, 0))
+              wraplength=int(px(900))).pack(fill="x", padx=8, pady=8)
 
         counts = Counter()
 
