@@ -780,6 +780,15 @@ def run_gui():
     slot_cv.pack(side="left")
     button(slot_row, "Clear", lambda: clear_cards()).pack(side="right", anchor="s", pady=(0, 2))
 
+    def suit_ink(card):
+        """Hearts and diamonds red, spades and clubs black, as on a real deck.
+
+        A deliberate exception to "one hue, one meaning": red here is the
+        suit, not "gone wrong". It uses the text-safe --danger-ink, and a
+        danger card is still told apart by its wash, edge and ▼.
+        """
+        return T["danger-ink"] if card % 4 in (1, 2) else T["ink"]
+
     def draw_slots():
         slot_cv.delete("all")
         xs, _ = slot_xs()
@@ -804,9 +813,9 @@ def run_gui():
                               outline=T["i-ink"] if current else T["line-strong"],
                               width=2 if current else 1)
                 slot_cv.create_text(x0 + px(8), y0 + px(6), text=rank, anchor="nw",
-                                    font=font(13, "bold"), fill=T["ink"])
+                                    font=font(13, "bold"), fill=suit_ink(card))
                 slot_cv.create_text(x0 + sw / 2, y0 + sh / 2 + px(10), text=suit,
-                                    font=font(24), fill=T["ink"])
+                                    font=font(24), fill=suit_ink(card))
         slot_cv.configure(cursor="hand2")
 
     # Clicks are matched by position, not bound to canvas items, because every
@@ -914,7 +923,7 @@ def run_gui():
             for col_i, rank in enumerate(reversed(RANKS)):  # A down to 2
                 card = RANKS.index(rank) * 4 + SUITS.index(suit)
                 x0, y0 = col_i * step_ + 1, row_i * px(DH + DG) + 1
-                fg, glyph, glyph_ink, width = T["ink"], "", "", 1
+                fg, glyph, glyph_ink, width = suit_ink(card), "", "", 1
                 if card in used:
                     # Disabled is neutral, never hued.
                     fill, fg, outline = T["bg"], T["i-disabled-ink"], T["line"]
