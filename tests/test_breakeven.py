@@ -152,3 +152,110 @@ def test_no_hex_outside_the_tokens():
     from breakeven import asset_path
     source = asset_path("tokens.css").parent.parent / "breakeven.py"
     assert not re.findall(r"#[0-9a-fA-F]{6}\b|#[0-9a-fA-F]{3}\b", source.read_text("utf-8"))
+
+
+# Two PokerStars hands as they appear in a hand history file: a 6-max cash
+# hand where you call, raise and call an all-in, then a tournament hand with
+# antes where you fold.
+HISTORY = """﻿PokerStars Hand #254343322345:  Hold'em No Limit ($0.01/$0.02 USD) - 2025/01/01 12:00:00 ET
+Table 'Alcyone II' 6-max Seat #3 is the button
+Seat 1: player1 ($2.00 in chips)
+Seat 2: Hero ($2.13 in chips)
+Seat 3: btn guy ($1.00 in chips)
+Seat 4: sb player ($2.00 in chips)
+Seat 5: bbplayer ($2.00 in chips)
+Seat 6: player6 ($2.00 in chips) is sitting out
+sb player: posts small blind $0.01
+bbplayer: posts big blind $0.02
+*** HOLE CARDS ***
+Dealt to Hero [Ah Kh]
+player1: raises $0.04 to $0.06
+Hero: calls $0.06
+btn guy: folds
+sb player: folds
+bbplayer: calls $0.04
+*** FLOP *** [Qh Jh 2c]
+bbplayer: checks
+player1: bets $0.10
+Hero: raises $0.20 to $0.30
+bbplayer: folds
+player1: calls $0.20
+*** TURN *** [Qh Jh 2c] [3s]
+player1: bets $1.64 and is all-in
+Hero: calls $1.64
+*** RIVER *** [Qh Jh 2c 3s] [Th]
+*** SHOW DOWN ***
+Hero: shows [Ah Kh] (a royal flush)
+player1: shows [Qd Qc] (three of a kind, Queens)
+Hero collected $3.95 from pot
+*** SUMMARY ***
+Total pot $4.07 | Rake $0.12
+Board [Qh Jh 2c 3s Th]
+Seat 2: Hero showed [Ah Kh] and won ($3.95) with a royal flush
+
+
+
+PokerStars Hand #254343322400: Tournament #3700000000, $1.00+$0.10 USD Hold'em No Limit - Level III (25/50) - 2025/01/01 12:30:00 ET
+Table '3700000000 1' 9-max Seat #1 is the button
+Seat 1: alice (1500 in chips)
+Seat 2: Hero (2,000 in chips)
+Seat 3: bob (1500 in chips)
+alice: posts the ante 5
+Hero: posts the ante 5
+bob: posts the ante 5
+Hero: posts small blind 25
+bob: posts big blind 50
+*** HOLE CARDS ***
+Dealt to Hero [7c 2d]
+alice: raises 100 to 150
+Hero: folds
+bob: folds
+Uncalled bet (100) returned to alice
+alice collected 140 from pot
+*** SUMMARY ***
+Total pot 140 | Rake 0
+Seat 1: alice (button) collected (140)
+
+PokerStars Hand #254343322500: Pot Limit Omaha ($0.01/$0.02 USD) - 2025/01/01 13:00:00 ET
+"""
+
+
+def test_hand_history_cash_hand():
+    from breakeven import parse_hand_histories
+    hands = parse_hand_histories(HISTORY)
+    assert [h.hand_id for h in hands] == ["254343322345", "254343322400"]   # Omaha skipped
+    hand = hands[0]
+    assert hand.hero == "Hero" and hand.hole == p("Ah Kh")
+    assert (hand.small_blind, hand.big_blind) == (0.01, 0.02)
+    assert hand.net == 1.95 and hand.currency == "$"   # won 3.95, put in 2.00
+    pre, flop, turn = hand.decisions
+    # Preflop: blinds and the raise are in, you face 0.06; four others dealt in.
+    assert (pre.street, pre.pot, pre.to_call, pre.opponents, pre.action) == \
+        ("Preflop", 0.09, 0.06, 4, "calls")
+    assert pre.board == []
+    # Flop: you raise against a 0.10 bet into 0.19; the bettor and the big blind are left.
+    assert (flop.street, flop.pot, flop.to_call, flop.opponents, flop.action) == \
+        ("Flop", 0.29, 0.10, 2, "raises")
+    assert flop.board == p("Qh Jh 2c")
+    # Turn: the all-in bet, one opponent left.
+    assert (turn.pot, turn.to_call, turn.opponents, turn.board) == (2.43, 1.64, 1, p("Qh Jh 2c 3s"))
+
+
+def test_hand_history_tournament_hand():
+    from breakeven import parse_hand_histories
+    hand = parse_hand_histories(HISTORY)[1]
+    assert hand.hole == p("7c 2d") and (hand.small_blind, hand.big_blind) == (25, 50)
+    assert hand.net == -30 and hand.currency == ""     # ante and small blind
+    (fold,) = hand.decisions
+    # Antes (dead) are in the pot but not in what you need to match.
+    assert (fold.pot, fold.to_call, fold.opponents, fold.action) == (240, 125, 2, "folds")
+
+
+def test_grades():
+    from breakeven import grade
+    assert grade("calls", 0.40, 0.33) == ("success", "✓ call paid")
+    assert grade("calls", 0.20, 0.33)[0] == "attention"            # cards to come
+    assert grade("calls", 0.20, 0.33, river=True) == ("danger", "✕ called short")
+    assert grade("folds", 0.20, 0.33) == ("success", "✓ good fold")
+    assert grade("folds", 0.40, 0.33)[0] == "attention"
+    assert grade("raises", 0.9, 0.1)[0] == "neutral"

@@ -46,6 +46,30 @@ It follows your system's light or dark mode. To pick one yourself, start it with
 
 The verdict uses pot odds alone. It doesn't count implied odds (what you could win on later streets) or your read on the other players' ranges.
 
+## Review your PokerStars hands
+
+After a session, see whether the calls and folds you made were priced right.
+
+1. Click **Open hand history…**. It opens in the folder where PokerStars saves your hands:
+   - **Windows:** `%LOCALAPPDATA%\PokerStars\HandHistory\<your name>`
+   - **Mac:** `~/Library/Application Support/PokerStars/HandHistory/<your name>`
+
+   PokerStars saves them by default. If the folder is empty, turn on **Settings → Playing History → Hand History** in PokerStars. You can pick several files at once.
+2. Or copy a hand from PokerStars' hand replayer or a forum post, and click **Paste hand**.
+
+A review window lists every spot where you faced a bet: the street, your cards and the board, the call and the pot, the equity you needed, your equity, and what you did. Each spot gets a price check:
+
+| Check | Means |
+|---|---|
+| **✓ call paid** / **✓ good fold** | Your call had the price, or your fold didn't |
+| **▲ called short** | Before the river you called without the price. The cards to come may still pay for it, so it's worth a look |
+| **▲ fold had the price** | You folded with enough equity against random hands. Players who bet usually hold better than random hands, so it's worth a look, not a mistake |
+| **✕ called short** | On the river you called without the price. Nothing is left to come, so this one cost you |
+
+Select a row to load that spot into the calculator: the pot, the call, the blinds, the players left, your cards and the board. You get the full verdict, with outs and danger cards. Only Hold'em hands are read.
+
+**Use it after you play, not during.** PokerStars and most other sites ban software that advises you while a hand is in progress (real-time assistance), and close accounts for it. Breakeven only reads hands that have finished, and only when you open them. Don't keep it open beside a real-money table.
+
 ## For developers
 
 The app is one Python file and uses only the standard library (Tkinter).

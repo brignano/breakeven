@@ -21,6 +21,7 @@ import statistics
 import subprocess
 import sys
 from collections import Counter
+from dataclasses import dataclass, field
 from itertools import combinations
 
 RANKS = "23456789TJQKA"
@@ -239,6 +240,200 @@ def next_empty_slot(slots, after):
         if slots[i] is None:
             return i
     return after
+
+
+# --------------------------------------------------------------------------
+# PokerStars hand histories, for review after a session. PokerStars writes
+# each finished hand to a text file on your computer; this reads them back
+# and finds every spot where you faced a bet, so the calculator can show
+# what the price was. Nothing here reads a table while a hand is played.
+# --------------------------------------------------------------------------
+
+HAND_START = re.compile(r"^﻿?PokerStars (?:Zoom )?(?:Hand|Game) #(\d+)", re.M)
+_AMOUNT = r"[$€£]?([\d,]+(?:\.\d+)?)"
+STREETS = {"*** HOLE CARDS ***": "Preflop", "*** FLOP ***": "Flop",
+           "*** TURN ***": "Turn", "*** RIVER ***": "River"}
+
+
+def _num(text):
+    return float(text.replace(",", ""))
+
+
+@dataclass
+class Decision:
+    """A spot where you had to call, fold or raise against a bet."""
+    hand_id: str
+    street: str             # Preflop, Flop, Turn or River
+    hole: list              # your two cards, as card ints
+    board: list             # the board when you acted
+    pot: float              # everything in the middle, including the bet you faced
+    to_call: float
+    opponents: int          # players still in the hand besides you
+    action: str             # "calls", "folds" or "raises"
+    small_blind: float = None
+    big_blind: float = None
+
+
+@dataclass
+class Hand:
+    hand_id: str
+    hero: str
+    hole: list
+    small_blind: float = None
+    big_blind: float = None
+    net: float = 0.0        # what you won, less what you put in
+    currency: str = ""      # $, € or £ at a cash table; "" for tournament chips
+    decisions: list = field(default_factory=list)
+
+
+def split_hand_histories(text):
+    """A hand history file (or several, joined) -> the text of each hand."""
+    starts = [m.start() for m in HAND_START.finditer(text)]
+    return [text[a:b].strip() for a, b in zip(starts, starts[1:] + [len(text)])]
+
+
+def parse_hand(text):
+    """One PokerStars Hold'em hand -> Hand, or None if it isn't one we can read.
+
+    Skips other games, and hands you weren't dealt into.
+    """
+    lines = [ln.strip() for ln in text.lstrip("﻿").strip().splitlines()]
+    head = HAND_START.match(lines[0]) if lines else None
+    if not head or "Hold'em" not in lines[0]:
+        return None
+    sb = bb = None
+    currency = ""
+    for group in re.findall(r"\(([^()]*)\)", lines[0]):
+        m = re.match(rf"\s*{_AMOUNT}\s*/\s*{_AMOUNT}", group)
+        if m:
+            sb, bb = _num(m[1]), _num(m[2])
+            currency = next((c for c in "$€£" if c in group), "")
+            break
+
+    stacks, dealt = {}, []
+    hero, hole = None, None
+    for line in lines:
+        if line.startswith("*** HOLE CARDS ***"):
+            break
+        m = re.match(rf"Seat \d+: (.+?) \({_AMOUNT} in chips", line)
+        if m:
+            stacks[m[1]] = _num(m[2])
+            if "is sitting out" not in line:
+                dealt.append(m[1])
+    names = sorted(stacks, key=len, reverse=True)   # longest first: names can contain spaces
+
+    street_name, street = None, {}
+    board, folded = [], set()
+    total, invested = 0.0, Counter()
+    won, decisions = Counter(), []
+    acting = False
+
+    def put_in(name, amount, live=True):
+        nonlocal total
+        total += amount
+        invested[name] += amount
+        stacks[name] = stacks.get(name, 0.0) - amount
+        if live:
+            street[name] = street.get(name, 0.0) + amount
+
+    for line in lines[1:]:
+        if line.startswith("***"):
+            marker = next((k for k in STREETS if line.startswith(k)), None)
+            acting = marker is not None
+            if marker:
+                street_name = STREETS[marker]
+                if street_name != "Preflop":
+                    street = {}
+                    try:
+                        board = parse_cards(" ".join(re.findall(r"\[([^\]]*)\]", line)))
+                    except ValueError:
+                        return None
+            continue
+        m = re.match(r"Dealt to (.+?) \[([^\]]+)\]", line)
+        if m and hero is None:
+            hero, hole = m[1], parse_cards(m[2])
+            continue
+        m = re.match(rf"Uncalled bet \({_AMOUNT}\) returned to (.+)$", line)
+        if m:
+            won[m[2]] += _num(m[1])
+            continue
+        m = re.match(rf"(.+?) collected {_AMOUNT} from", line)
+        if m:
+            won[m[1]] += _num(m[2])
+            continue
+        name = next((n for n in names if line.startswith(n + ": ")), None)
+        if name is None:
+            continue
+        what = line[len(name) + 2:].replace(" and is all-in", "")
+        if m := re.fullmatch(rf"posts (?:small|big) blind {_AMOUNT}", what):
+            put_in(name, _num(m[1]))
+        elif m := re.fullmatch(rf"posts small & big blinds {_AMOUNT}", what):
+            amount = _num(m[1])
+            live = min(amount, bb) if bb else amount
+            put_in(name, live)
+            put_in(name, amount - live, live=False)
+        elif m := re.fullmatch(rf"posts the ante {_AMOUNT}", what):
+            put_in(name, _num(m[1]), live=False)
+        elif not acting:
+            continue
+        elif what in ("folds", "checks") or re.fullmatch(rf"(?:calls|bets|raises) .*", what):
+            verb = what.split()[0]
+            if name == hero and verb in ("calls", "folds", "raises"):
+                facing = max(street.values(), default=0.0) - street.get(hero, 0.0)
+                to_call = min(facing, max(stacks.get(hero, 0.0), 0.0))
+                if to_call > 0 and hole:
+                    in_hand = [n for n in dealt if n not in folded]
+                    decisions.append(Decision(
+                        head[1], street_name, list(hole), list(board),
+                        round(total, 2), round(to_call, 2), max(1, len(in_hand) - 1),
+                        verb, sb, bb))
+            if verb == "folds":
+                folded.add(name)
+            elif m := re.fullmatch(rf"(?:calls|bets) {_AMOUNT}", what):
+                put_in(name, _num(m[1]))
+            elif m := re.fullmatch(rf"raises {_AMOUNT} to {_AMOUNT}", what):
+                put_in(name, _num(m[2]) - street.get(name, 0.0))
+
+    if hero is None or not hole:
+        return None
+    return Hand(head[1], hero, hole, sb, bb, round(won[hero] - invested[hero], 2), currency,
+                decisions)
+
+
+def parse_hand_histories(text):
+    """Every readable Hold'em hand in `text`, in order."""
+    return [h for h in map(parse_hand, split_hand_histories(text)) if h]
+
+
+def grade(action, equity, needed, river=False):
+    """How a call or fold compares with the price: (state, symbol and word).
+
+    Equity is against random hands, so it runs high against someone who
+    bet. On the river nothing is left to win later, so a call without the
+    price is a clear mistake. Earlier, the cards to come can pay for a short
+    call, so it is only worth a look, like a fold that had the price.
+    """
+    if action == "raises":
+        return "neutral", "raised"
+    pays = equity >= needed
+    if action == "calls":
+        if pays:
+            return "success", "✓ call paid"
+        return ("danger", "✕ called short") if river else ("attention", "▲ called short")
+    return ("success", "✓ good fold") if not pays else ("attention", "▲ fold had the price")
+
+
+def hand_history_dirs():
+    """Where PokerStars keeps hand histories on this computer, if it does."""
+    from pathlib import Path
+    if sys.platform == "win32":
+        bases = [Path(os.environ.get("LOCALAPPDATA", ""))]
+    elif sys.platform == "darwin":
+        bases = [Path.home() / "Library" / "Application Support"]
+    else:
+        bases = []
+    return [d for base in bases if base.is_dir()
+            for d in sorted(base.glob("PokerStars*/HandHistory")) if d.is_dir()]
 
 
 # --------------------------------------------------------------------------
@@ -467,6 +662,10 @@ def run_gui():
     mark_cv.pack(side="left", padx=(0, 10))
     label(head, APP_NAME, 17, "bold", fg=T["ink"]).pack(side="left")
     label(head, "pot odds & equity", 10, fg=T["slate"]).pack(side="left", padx=10, pady=(6, 0))
+    button(head, "Paste hand", lambda: paste_hands()).pack(side="right")
+    button(head, "Open hand history…", lambda: open_histories()).pack(side="right", padx=(0, 6))
+    # Which reviewed hand is loaded, shown only while one is.
+    review_note = label(outer, "", 9, fg=T["ink-soft"], anchor="w")
 
     def draw_header_mark():
         w, h = px(30), px(18)
@@ -836,6 +1035,7 @@ def run_gui():
             return
         fields["pot"].set(format_amount(sb + bb))
         fields["call"].set(format_amount(bb))
+        show_review_note("")
         clear_cards()
 
     # Results update as you go. Each run gets a number, so a slow simulation
@@ -973,6 +1173,165 @@ def run_gui():
             results.put(marked)
 
         threading.Thread(target=work, daemon=True).start()
+
+    # ---- Hand history review ----------------------------------------------
+    # After a session: read PokerStars' hand history files, list every spot
+    # where you faced a bet, grade each against its price, and load any of
+    # them into the calculator above.
+    from tkinter import filedialog, messagebox, ttk
+
+    review = {"win": None, "run": 0}
+    PAST = {"calls": "called", "folds": "folded", "raises": "raised"}
+
+    def show_review_note(text):
+        if text:
+            review_note.configure(text=text)
+            review_note.pack(fill="x", pady=(0, 8), before=panel)
+        else:
+            review_note.pack_forget()
+
+    def open_histories():
+        from pathlib import Path
+        start = next(iter(hand_history_dirs()), None)
+        # PokerStars keeps one folder per account; go straight into it if there's one.
+        if start is not None:
+            inner = [d for d in start.iterdir() if d.is_dir()]
+            start = inner[0] if len(inner) == 1 else start
+        paths = filedialog.askopenfilenames(
+            parent=root, title="Open PokerStars hand history",
+            initialdir=str(start) if start else None,
+            filetypes=[("Hand histories", "*.txt"), ("All files", "*")])
+        if paths:
+            show_review("\n\n".join(Path(p).read_text("utf-8-sig", errors="replace")
+                                    for p in paths))
+
+    def paste_hands():
+        try:
+            text = root.clipboard_get()
+        except tk.TclError:
+            text = ""
+        show_review(text)
+
+    def load_decision(d):
+        """Put a reviewed spot into the calculator."""
+        if d.small_blind and d.big_blind:
+            blinds["sb"].set(format_amount(d.small_blind))
+            blinds["bb"].set(format_amount(d.big_blind))
+        fields["pot"].set(format_amount(d.pot))
+        fields["call"].set(format_amount(d.to_call))
+        opps.set(min(9, d.opponents))
+        slots[:] = d.hole + d.board + [None] * (5 - len(d.board))
+        active[0] = next_empty_slot(slots, len(slots) - 1)
+        show_review_note(f"Reviewing hand #{d.hand_id}  ·  {d.street}  ·  "
+                         f"you {PAST[d.action]} {format_amount(d.to_call)} "
+                         f"into {format_amount(d.pot)}")
+        redraw_cards()
+
+    def show_review(text):
+        hands = parse_hand_histories(text)
+        spots = [d for h in hands for d in h.decisions]
+        if not spots:
+            messagebox.showinfo(APP_NAME, (
+                f"Read {len(hands)} Hold'em hand{'s' * (len(hands) != 1)}, but none where you "
+                "faced a bet." if hands else
+                "No PokerStars Hold'em hands found. Open a hand history file, or copy a "
+                "hand from PokerStars and use Paste hand."), parent=root)
+            return
+        if review["win"] is not None and review["win"].winfo_exists():
+            review["win"].destroy()
+        review["run"] += 1
+        run = review["run"]
+
+        win = tk.Toplevel(root, bg=T["bg"], padx=16, pady=14)
+        review["win"] = win
+        win.title(f"{APP_NAME} — review")
+        summary = f"{len(hands)} hands  ·  {len(spots)} spots facing a bet"
+        currencies = {h.currency for h in hands}
+        if len(currencies) == 1:            # don't add chips to dollars
+            net = sum(h.net for h in hands)
+            unit = currencies.pop()
+            summary += (f"  ·  net {'+' if net >= 0 else '−'}{unit}{format_amount(abs(net))}"
+                        + ("" if unit else " chips"))
+        label(win, summary, 13, "bold", fg=T["ink"], anchor="w").pack(fill="x")
+        tally = label(win, "Grading…", 9, fg=T["slate"], fixed=True, anchor="w")
+        tally.pack(fill="x", pady=(2, 10))
+
+        style = ttk.Style(win)
+        style.theme_use("clam")
+        style.configure("Review.Treeview", background=T["card"], fieldbackground=T["card"],
+                        foreground=T["ink"], bordercolor=T["line"], lightcolor=T["card"],
+                        darkcolor=T["card"], font=font(10), rowheight=int(px(26)))
+        style.configure("Review.Treeview.Heading", background=T["bg"], foreground=T["slate"],
+                        bordercolor=T["line"], lightcolor=T["bg"], darkcolor=T["bg"],
+                        relief="flat", font=font(8, fixed=True))
+        style.map("Review.Treeview", background=[("selected", T["i-surface"])],
+                  foreground=[("selected", T["ink"])])
+        style.map("Review.Treeview.Heading", background=[("active", T["surface-hover"])])
+        style.configure("Review.Vertical.TScrollbar", background=T["surface-active"],
+                        troughcolor=T["bg"], bordercolor=T["bg"], arrowcolor=T["slate"],
+                        lightcolor=T["surface-active"], darkcolor=T["surface-active"])
+
+        columns = [("hand", "HAND", 120), ("street", "STREET", 70), ("cards", "CARDS", 150),
+                   ("price", "CALL / POT", 120), ("need", "NEED", 60), ("equity", "EQUITY", 60),
+                   ("you", "YOU", 60), ("grade", "PRICE CHECK", 150)]
+        box = tk.Frame(win, bg=T["bg"])
+        box.pack(fill="both", expand=True)
+        tree = ttk.Treeview(box, columns=[c for c, _, _ in columns], show="headings",
+                            style="Review.Treeview", height=min(16, len(spots)),
+                            selectmode="browse")
+        for key, title, width in columns:
+            tree.heading(key, text=title, anchor="w")
+            tree.column(key, width=int(px(width)), anchor="w", stretch=key == "grade")
+        bar = ttk.Scrollbar(box, orient="vertical", command=tree.yview,
+                            style="Review.Vertical.TScrollbar")
+        tree.configure(yscrollcommand=bar.set)
+        tree.pack(side="left", fill="both", expand=True)
+        bar.pack(side="right", fill="y")
+        # Only the spots worth a second look are washed; a priced-right row
+        # stays neutral and says so in words.
+        for state in ("danger", "attention"):
+            tree.tag_configure(state, background=T[f"{state}-surface"])
+
+        for i, d in enumerate(spots):
+            cards = "".join(map(card_label, d.hole))
+            if d.board:
+                cards += "  " + "".join(map(card_label, d.board))
+            tree.insert("", "end", iid=str(i), values=(
+                d.hand_id, d.street, cards,
+                f"{format_amount(d.to_call)} / {format_amount(d.pot)}",
+                f"{pot_odds(d.pot, d.to_call):.0%}", "…", PAST[d.action], ""))
+        tree.bind("<<TreeviewSelect>>",
+                  lambda _e: tree.selection() and load_decision(spots[int(tree.selection()[0])]))
+
+        label(win, "Equity is against random hands and the price check uses pot odds alone, "
+                   "like the calculator. Select a row to load it into the calculator.",
+              9, fg=T["slate"], anchor="w", justify="left",
+              wraplength=int(px(800))).pack(fill="x", pady=(10, 0))
+
+        counts = Counter()
+
+        def graded(i, eq, state, word):
+            if review["run"] != run or not win.winfo_exists():
+                return
+            values = list(tree.item(str(i), "values"))
+            values[5], values[7] = f"{eq:.0%}", word
+            tree.item(str(i), values=values, tags=(state,))
+            counts[state] += 1
+            done = sum(counts.values())
+            tally.configure(text=(
+                f"✓ {counts['success']} priced right  ·  ✕ {counts['danger']} river calls short  ·  "
+                f"▲ {counts['attention']} worth a look  ·  {counts['neutral']} raised"
+                + ("" if done == len(spots) else f"   (grading {done}/{len(spots)})")))
+
+        def grade_all():
+            for i, d in enumerate(spots):
+                if review["run"] != run:
+                    return
+                eq = simulate_equity(d.hole, d.board, min(9, d.opponents), 2000)
+                state, word = grade(d.action, eq, pot_odds(d.pot, d.to_call), len(d.board) == 5)
+                results.put(lambda i=i, eq=eq, state=state, word=word: graded(i, eq, state, word))
+
+        threading.Thread(target=grade_all, daemon=True).start()
 
     for var in (*fields.values(), *blinds.values()):
         var.trace_add("write", lambda *_: schedule())
