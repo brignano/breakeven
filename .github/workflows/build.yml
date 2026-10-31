@@ -17,6 +17,11 @@ on:
 permissions:
   contents: write
 
+env:
+  # The brignano/design release assets/tokens.css is copied from. Bump it
+  # and replace the file together (README: "Design system").
+  DESIGN_TOKENS: v0.5.0
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -27,6 +32,10 @@ jobs:
           python-version: "3.12"
       - run: pip install pytest
       - run: pytest -q
+      - name: Tokens match the pinned design system release
+        run: >
+          curl -fsSL "https://cdn.jsdelivr.net/gh/brignano/design@${DESIGN_TOKENS}/tokens.css"
+          | diff -u - assets/tokens.css
 
   build:
     needs: test
@@ -34,9 +43,9 @@ jobs:
       matrix:
         include:
           - os: windows-latest
-            asset: PokerHelper-windows.zip
+            asset: Breakeven-windows.zip
           - os: macos-latest
-            asset: PokerHelper-mac.zip
+            asset: Breakeven-mac.zip
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
@@ -44,22 +53,24 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install pyinstaller
-      # --icon is the .exe / .app icon; --add-data ships the PNG the window uses.
+      # --icon is the .exe / .app icon; --add-data ships the PNG the window
+      # uses and the design tokens it takes its colours from.
       - run: >
-          pyinstaller --windowed --onefile --name "Poker Helper"
+          pyinstaller --windowed --onefile --name "Breakeven"
           --icon ${{ runner.os == 'Windows' && 'assets/icon.ico' || 'assets/icon.icns' }}
           --add-data "assets/icon.png:assets"
-          pot_odds.py
+          --add-data "assets/tokens.css:assets"
+          breakeven.py
 
       - name: Package (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
-        run: Compress-Archive -Path "dist/Poker Helper.exe" -DestinationPath "${{ matrix.asset }}"
+        run: Compress-Archive -Path "dist/Breakeven.exe" -DestinationPath "${{ matrix.asset }}"
 
       - name: Package (macOS)
         if: runner.os == 'macOS'
         # ditto keeps the .app bundle's permissions and symlinks; plain zip breaks it.
-        run: ditto -c -k --keepParent "dist/Poker Helper.app" "${{ matrix.asset }}"
+        run: ditto -c -k --keepParent "dist/Breakeven.app" "${{ matrix.asset }}"
 
       - uses: actions/upload-artifact@v7
         with:
@@ -79,4 +90,4 @@ jobs:
         with:
           tag_name: ${{ inputs.version || github.ref_name }}
           target_commitish: ${{ github.sha }}
-          files: PokerHelper-*.zip
+          files: Breakeven-*.zip

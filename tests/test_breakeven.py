@@ -4,7 +4,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from pot_odds import (call_ev, card_label, format_amount, hand_rank, icon_path, next_empty_slot,
+from breakeven import (call_ev, card_label, format_amount, hand_rank, icon_path, next_empty_slot,
                       outs_probability, parse_cards as p, pot_odds, simulate_equity,
                       step_amount)
 
@@ -53,7 +53,7 @@ def test_card_picker_helpers():
 
 
 def test_next_card_highlights():
-    from pot_odds import classify_next_cards, next_card_equities
+    from breakeven import classify_next_cards, next_card_equities
     rng = random.Random(3)
     hole, board = p("Ah Kh"), p("Qh Jh 2c")
     eq = next_card_equities(hole, board, 1, 300, rng)
@@ -68,7 +68,7 @@ def test_next_card_highlights():
 
 
 def test_danger_cards():
-    from pot_odds import classify_next_cards, next_card_equities
+    from breakeven import classify_next_cards, next_card_equities
     rng = random.Random(5)
     # A set of kings on a spade-heavy turn: any spade makes a flush for a
     # hand holding one, a ten makes broadway for a hand holding an ace, and
@@ -87,7 +87,7 @@ def test_danger_cards():
 
 
 def test_blanks_are_not_danger_cards():
-    from pot_odds import classify_next_cards, next_card_equities
+    from breakeven import classify_next_cards, next_card_equities
     # A weak draw on the flop: a blank turn costs one of two chances to hit,
     # but that is no reason to flag it.
     rng = random.Random(1)
@@ -111,3 +111,44 @@ def test_icon_ships_with_the_app():
     # The window loads this PNG; the build workflow bundles it next to the app.
     assert icon_path().is_file()
     assert icon_path().read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
+
+
+# Every token the window paints with, in both themes.
+UI_TOKENS = ("bg", "card", "ink", "ink-soft", "slate", "line", "line-strong", "line-control",
+             "surface-hover", "surface-active", "i", "i-ink", "i-hover", "i-pressed", "on-i",
+             "i-surface", "i-disabled-ink", "success", "success-ink", "success-surface",
+             "success-line", "danger", "danger-ink", "danger-surface", "danger-line",
+             "attention-ink", "attention-surface", "attention-line", "mark", "n-700", "on-dark")
+
+
+def test_design_tokens_resolve_in_both_themes():
+    import re
+    from breakeven import asset_path, load_theme
+    assert asset_path("tokens.css").is_file()
+    light, dark = load_theme(False), load_theme(True)
+    for name in UI_TOKENS:
+        assert re.fullmatch(r"#[0-9a-f]{6}", light[name]), name
+        assert re.fullmatch(r"#[0-9a-f]{6}", dark[name]), name
+    assert light["ink"] != dark["ink"] and light["bg"] != dark["bg"]
+
+
+def test_token_parsing():
+    from breakeven import load_theme, mix
+    css = """/* --ignored: #000000; */
+    :root { --a: light-dark(#ffffff, #000); --b: var(--a);
+            --card: light-dark(#ffffff, #000000);
+            --wash: light-dark(color-mix(in srgb, #ff0000 50%, transparent), #00ff00); }
+    .tier-marketing { --a: #123456; }"""
+    light, dark = load_theme(False, css), load_theme(True, css)
+    assert light["a"] == light["b"] == "#ffffff" and dark["b"] == "#000000"
+    assert "ignored" not in light
+    assert light["wash"] == mix("#ff0000", "#ffffff", 0.5) == "#ff8080"
+    assert dark["wash"] == "#00ff00"
+
+
+def test_no_hex_outside_the_tokens():
+    # DESIGN.md §12: a literal colour survives a theme change silently.
+    import re
+    from breakeven import asset_path
+    source = asset_path("tokens.css").parent.parent / "breakeven.py"
+    assert not re.findall(r"#[0-9a-fA-F]{6}\b|#[0-9a-fA-F]{3}\b", source.read_text("utf-8"))
