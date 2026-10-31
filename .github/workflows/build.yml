@@ -91,3 +91,5 @@ jobs:
           tag_name: ${{ inputs.version || github.ref_name }}
           target_commitish: ${{ github.sha }}
           files: Breakeven-*.zip
+          # List the pull requests merged since the last release as the notes.
+          generate_release_notes: true
