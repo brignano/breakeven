@@ -18,7 +18,7 @@ Enter the pot and the bet and it tells you, instantly, whether calling pays.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/calculator-dark.png">
-  <img src="docs/images/calculator-light.png" width="560" alt="Breakeven with A♥K♥ on a Q♥7♥2♣ flop, facing 20 into 60: a green CALL verdict at 72% equity against 25% needed, with the 15 outs highlighted green in the deck and 4 danger cards in red">
+  <img src="docs/images/calculator-light.png" width="560" alt="Breakeven with A♥K♥ on a Q♥7♥2♣ flop, facing 20 into 60: a green CALL verdict at 74% equity against 25% needed, with the 15 outs highlighted green in the deck">
 </picture>
 
 </div>
