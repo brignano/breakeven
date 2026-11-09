@@ -1,7 +1,8 @@
 # Product page at breakeven.brignano.io
 
-Status: proposed
+Status: accepted
 Issue: #24
+ADR: [0005](../decisions/0005-product-page-hosting-and-layout.md)
 
 ## Summary
 
@@ -379,52 +380,21 @@ counter, the chess idea, and any lead or email capture. Also out of scope:
 OS detection in JavaScript, a theme toggle, a custom preview domain, and code
 signing.
 
-## Open decisions for Anthony
+## Decisions (answered by Anthony, 2026-11-09: `1A 2A 3A`)
 
-### Decision 1: Can the deploy output be `_site/` instead of `site/`?
-
-The issue says `assets.directory: "site"`. The build has to copy in the
-screenshots and write the copyright year (`DESIGN.md` §13 says the year is
-filled in at build time and never typed by hand). If it writes into the
-tracked `site/` folder, every local run leaves a dirty tree and a gitignored
-`site/images/` mixed in with source.
-
-- **A (recommended):** source in `site/`, output in gitignored `_site/`, with
-  `assets.directory: "_site"`. Source and output are cleanly separated, and
-  the build script is the same everywhere.
-- **B:** `assets.directory: "site"`. The script copies images into
-  `site/images/` (gitignored) and runs `sed` on `site/index.html` in place.
-  This matches the issue word for word, but a local run edits a tracked file.
-- **C:** `site/` with no year at all, dropping the footer year. This breaks
-  the §13 checklist.
-
-### Decision 2: What is the one primary action, given two platforms?
-
-`DESIGN.md` §13 allows one primary action per page. Breakeven has two
-downloads.
-
-- **A (recommended):** the primary is "Download", and it jumps to the close
-  band, where the panel shows Windows and Mac as two equal buttons with the
-  unsigned-app help. The header and hero say "Download" too. There's no
-  JavaScript, the help text sits right beside the buttons, and it costs one
-  scroll.
-- **B:** the hero shows "Download for Windows" as primary and "Download for
-  Mac" as secondary. That's one click for Windows users and a second-class
-  button for Mac users. The unsigned-app warning is far from the click.
-- **C:** a small script makes the visitor's OS the primary, and both buttons
-  show without JavaScript. That's the nicest for visitors, but it's the page's
-  only script and a user-agent check that has to be maintained.
-
-### Decision 3: Where does the FAQ go?
-
-§13's bands have no FAQ slot. Story chapters are three or four.
-
-- **A (recommended):** chapter 04 "Questions", just before the close band. The
-  chapters become calculator, session review, private and free, and questions.
-  This answers "is it allowed and is it safe" right before the download ask.
-- **B:** the FAQ goes inside the close band, under the download panel. The
-  story keeps a fourth chapter for "Players" on its own. That splits review
-  into two chapters, and the close band gets crowded.
+1. **Deploy output is `_site/`** (1A). The source lives in `site/`, and
+   `scripts/build-site.sh` writes the gitignored `_site/`. That folder is what
+   `assets.directory` points at. This replaces the issue's
+   `assets.directory: "site"`. Rejected: building in place in `site/` (a local
+   run edits a tracked file) and dropping the footer year (breaks the §13
+   checklist).
+2. **One primary action, "Download"** (2A). It jumps to the close band, where
+   the panel shows Windows and Mac as two equal buttons with the unsigned-app
+   help beside them. The page has no JavaScript. Rejected: Windows as primary
+   with Mac as secondary, and OS detection by script.
+3. **The FAQ is chapter 04, "Questions"** (3A), right before the close band.
+   The chapters are calculator, session review, private and free, and
+   questions. Rejected: the FAQ inside the close band.
 
 ## Proposed issues
 
