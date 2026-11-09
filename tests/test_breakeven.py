@@ -53,10 +53,9 @@ def test_card_picker_helpers():
 
 
 def test_ellipsize():
+    from types import SimpleNamespace
     from breakeven import ellipsize
-
-    class OneWide:                       # every character one unit wide
-        measure = staticmethod(len)
+    OneWide = SimpleNamespace(measure=len)       # every character one unit wide
 
     assert ellipsize("Few hands", OneWide, 9) == "Few hands"           # fits: untouched
     assert ellipsize("Few hands", OneWide, 5) == "Few…"                # no space before …

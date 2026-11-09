@@ -236,9 +236,11 @@ def ellipsize(text, font, width):
     """`text`, cut short with "…" if it is wider than `width` in `font`."""
     if font.measure(text) <= width:
         return text
-    while text and font.measure(text + "…") > width:
-        text = text[:-1]
-    return text.rstrip() + "…"
+    fits, too_long = 0, len(text)          # the longest prefix that fits with "…"
+    while too_long - fits > 1:
+        mid = (fits + too_long) // 2
+        fits, too_long = (mid, too_long) if font.measure(text[:mid] + "…") <= width else (fits, mid)
+    return text[:fits].rstrip() + "…"
 
 
 def next_empty_slot(slots, after):
@@ -1488,26 +1490,28 @@ def run_gui():
 
         # Each column is as wide as the longest value it can hold, measured
         # in the font it is drawn in; refit() measures again on every rescale.
-        fits, notes = [], []
+        fits = []
 
         def refit():
             style.configure("Review.Treeview", rowheight=int(px(26)))
             for fit_one in fits:
                 fit_one()
-            for text in notes:
-                text.configure(wraplength=int(px(900)))
 
         def note(parent, text):
-            notes.append(label(parent, text, 9, fg=T["slate"], anchor="w", justify="left"))
-            notes[-1].pack(fill="x", padx=8, pady=8)
+            w = label(parent, text, 9, fg=T["slate"], anchor="w", justify="left")
+            w.pack(fill="x", padx=8, pady=8)
+            fits.append(lambda: w.configure(wraplength=int(px(900))))
 
-        def table(parent, columns, rows):
-            """columns: (key, heading, every value it can hold); the last one stretches."""
-            columns = [(key, title, set(values)) for key, title, values in columns]
+        def table(parent, headings, rows, later=None):
+            """A table of `rows`, the last column stretching. `later` holds every
+            value a column can be filled in with after it opens."""
+            later = later or {}
+            columns = [(key, title, later.get(key) or {row[i] for row in rows})
+                       for i, (key, title) in enumerate(headings)]
             box = tk.Frame(parent, bg=T["bg"])
             box.pack(fill="both", expand=True)
-            tree = ttk.Treeview(box, columns=[c for c, _, _ in columns], show="headings",
-                                style="Review.Treeview", height=min(16, max(rows, 1)),
+            tree = ttk.Treeview(box, columns=[c for c, _ in headings], show="headings",
+                                style="Review.Treeview", height=min(16, max(len(rows), 1)),
                                 selectmode="browse")
             for key, title, _values in columns:
                 tree.heading(key, text=title, anchor="w")
@@ -1540,10 +1544,8 @@ def run_gui():
             prows.append((p.name + ("  (you)" if p.name in heroes else ""), str(p.hands),
                           f"{p.vpip:.0%}", f"{p.pfr:.0%}", af, style_word, read))
         ptree = table(players_tab, [
-            (key, title, [row[i] for row in prows]) for i, (key, title) in enumerate([
-                ("name", "PLAYER"), ("hands", "HANDS"), ("vpip", "PLAYS"), ("pfr", "RAISES"),
-                ("af", "AGGRESSION"), ("style", "STYLE"), ("read", "WHAT IT USUALLY MEANS")])],
-            len(people))
+            ("name", "PLAYER"), ("hands", "HANDS"), ("vpip", "PLAYS"), ("pfr", "RAISES"),
+            ("af", "AGGRESSION"), ("style", "STYLE"), ("read", "WHAT IT USUALLY MEANS")], prows)
         ptree.tag_configure("few", foreground=T["slate"])
         for row, p in zip(prows, people):
             ptree.insert("", "end", values=row, tags=("few",) if p.hands < MIN_HANDS else ())
@@ -1583,15 +1585,12 @@ def run_gui():
                          f"{pot_odds(d.pot, d.to_call):.0%}", "…", PAST[d.action], ""))
         # Equity and the price check arrive while grading: size them for
         # anything they can say.
-        later = {"equity": ["100%"],
-                 "grade": {grade(action, eq, 0.5, river)[1] for action in PAST
-                           for eq in (0, 1) for river in (False, True)}}
         tree = table(spots_tab, [
-            (key, title, later.get(key, [row[i] for row in rows]))
-            for i, (key, title) in enumerate([
-                ("hand", "HAND"), ("street", "STREET"), ("cards", "CARDS"),
-                ("price", "CALL / POT"), ("need", "NEED"), ("equity", "EQUITY"),
-                ("you", "YOU"), ("grade", "PRICE CHECK")])], len(spots))
+            ("hand", "HAND"), ("street", "STREET"), ("cards", "CARDS"), ("price", "CALL / POT"),
+            ("need", "NEED"), ("equity", "EQUITY"), ("you", "YOU"), ("grade", "PRICE CHECK")],
+            rows, later={"equity": ["100%"],
+                         "grade": {grade(action, eq, 0.5, river)[1] for action in PAST
+                                   for eq in (0, 1) for river in (False, True)}})
         # Only the spots worth a second look are washed; a priced-right row
         # stays neutral and says so in words.
         for state in ("danger", "attention"):
