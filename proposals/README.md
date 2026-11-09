@@ -10,3 +10,4 @@ in [`decisions/`](../decisions/README.md).
 | Proposal | Status | Issue | Split into | ADR |
 |---|---|---|---|---|
 | [README screenshots in CI](readme-screenshots-in-ci.md) | accepted | #21 | #21 | [0004](../decisions/0004-readme-screenshots-refresh-pr.md) |
+| [Product page at breakeven.brignano.io](product-page.md) | accepted | #24 | #24 | [0005](../decisions/0005-product-page-hosting-and-layout.md) |
