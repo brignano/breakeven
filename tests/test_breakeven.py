@@ -52,6 +52,17 @@ def test_card_picker_helpers():
     assert next_empty_slot([1, 2, 3], 1) == 1                    # all full: stay
 
 
+def test_ellipsize():
+    from breakeven import ellipsize
+
+    class OneWide:                       # every character one unit wide
+        measure = staticmethod(len)
+
+    assert ellipsize("Few hands", OneWide, 9) == "Few hands"           # fits: untouched
+    assert ellipsize("Few hands", OneWide, 5) == "Few…"                # no space before …
+    assert ellipsize("Few hands", OneWide, 0) == "…"
+
+
 def test_next_card_highlights():
     from breakeven import classify_next_cards, next_card_equities
     rng = random.Random(3)
