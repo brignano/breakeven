@@ -96,6 +96,24 @@ def test_danger_cards():
     assert dz == {1, 2}
 
 
+def test_same_spot_gives_same_marks():
+    from breakeven import classify_next_cards, next_card_equities, spot_seed
+    # The spot from #23, which marked 4 danger cards one run and 0 the next.
+    hole, board = p("Ah Kh"), p("Qh 7h 2c")
+    needed = pot_odds(60, 20)
+    state = random.getstate()
+    marks = []
+    for _ in range(3):
+        rng = random.Random(spot_seed(hole, board, 1))
+        eq = simulate_equity(hole, board, 1, 500, rng)
+        marks.append((eq, classify_next_cards(next_card_equities(hole, board, 1, 200, rng),
+                                              needed)))
+    assert marks[0] == marks[1] == marks[2]
+    assert random.getstate() == state                           # global random untouched
+    assert spot_seed(hole, board, 1) == spot_seed(hole[::-1], board[::-1], 1)
+    assert spot_seed(hole, board, 1) != spot_seed(hole, board, 2)
+
+
 def test_blanks_are_not_danger_cards():
     from breakeven import classify_next_cards, next_card_equities
     # A weak draw on the flop: a blank turn costs one of two chances to hit,

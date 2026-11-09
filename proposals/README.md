@@ -1,0 +1,13 @@
+# Proposals
+
+Designs and specs for Breakeven, including rejected ones. One file per
+proposal, `proposals/<slug>.md`, starting with a `Status:` line
+(`proposed | accepted | building | done | rejected`) and the issue that tracks
+it. Every proposal has an issue. The PR that adds a proposal or changes its
+status adds or updates its row here. Accepted and rejected proposals get an ADR
+in [`decisions/`](../decisions/README.md).
+
+| Proposal | Status | Issue | Split into | ADR |
+|---|---|---|---|---|
+| [README screenshots in CI](readme-screenshots-in-ci.md) | accepted | #21 | #21 | [0004](../decisions/0004-readme-screenshots-refresh-pr.md) |
+| [Product page at breakeven.brignano.io](product-page.md) | accepted | #24 | #24 | [0005](../decisions/0005-product-page-hosting-and-layout.md) |
