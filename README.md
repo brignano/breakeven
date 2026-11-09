@@ -118,6 +118,10 @@ Colours, type and the mark follow [brignano/design](https://github.com/brignano/
 
 In the Actions tab, open **build**, click **Run workflow**, and enter a version such as `v0.2.0`. You can also push a tag with that name. Either way, GitHub Actions runs the tests, builds the Windows and Mac apps with PyInstaller, and attaches both zips to a release. Every push to `main` also builds them, and you can download those builds from the Actions run.
 
+### Docs
+
+`docs/` holds what users read: the [guide](docs/usage.md) and its screenshots. Designs and specs live in [`proposals/`](proposals/README.md), and decisions in [`decisions/`](decisions/README.md), one ADR per decision.
+
 The screenshots in `docs/images/` are real captures of the app on sample hands. `docs/images/social-preview.png` is the repository's link preview (Settings → Social preview).
 
 ## License
