@@ -22,7 +22,7 @@ It follows your system's light or dark mode. To pick one yourself, start it with
 - **Your outs and the danger cards, highlighted**: on the flop and turn, the app tries every card that could come next. Cards that put you ahead are filled green and marked **✓**, and cards that help but not enough get a green edge and a **+**. Cards that help your opponents are filled red and marked **▼**: ones that leave you 10 points worse off than a typical next card, or 5 points when that turns a call into a fold (the third flush card, the card that fills a straight). Every card is measured against a typical next card, not against your chance right now, so a blank turn that just uses up one of your draws isn't flagged. Point at a card to see your chance to win if it comes, next to the chance after a typical card. The ✓ cards are your outs, and the app counts them for you.
 - **Pot odds** and the **equity you need** to break even: call ÷ (pot + call).
 - **Outs**: the exact chance of hitting on the next card and by the river.
-- **Equity**: your chance to win at showdown. It runs 5,000 simulated hands against random opponent hands, and ties split the pot.
+- **Equity**: your chance to win at showdown. It runs 5,000 simulated hands against random opponent hands, and ties split the pot. In the calculator, the same cards and number of opponents always give the same equity and the same marked cards.
 - **A verdict** (CALL or FOLD) and the EV of calling.
 
 The verdict uses pot odds alone. It doesn't count implied odds (what you could win on later streets) or your read on the other players' ranges.
