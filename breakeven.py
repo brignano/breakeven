@@ -237,6 +237,17 @@ def card_label(card):
     return RANKS[card // 4].replace("T", "10") + "♣♦♥♠"[card % 4]
 
 
+def ellipsize(text, font, width):
+    """`text`, cut short with "…" if it is wider than `width` in `font`."""
+    if font.measure(text) <= width:
+        return text
+    fits, too_long = 0, len(text)          # the longest prefix that fits with "…"
+    while too_long - fits > 1:
+        mid = (fits + too_long) // 2
+        fits, too_long = (mid, too_long) if font.measure(text[:mid] + "…") <= width else (fits, mid)
+    return text[:fits].rstrip() + "…"
+
+
 def next_empty_slot(slots, after):
     """Index of the first empty slot after `after` (wrapping), or `after`."""
     n = len(slots)
@@ -754,9 +765,14 @@ def run_gui():
 
     def font(size, weight="normal", fixed=False):
         if (size, weight, fixed) not in fonts:
+            # Born at the current scale: a font first used after a rescale
+            # (the review window's) would otherwise stay at the base size.
             fonts[size, weight, fixed] = tkfont.Font(family=mono if fixed else sans,
-                                                     size=size, weight=weight)
+                                                     size=scaled_size(size), weight=weight)
         return fonts[size, weight, fixed]
+
+    def scaled_size(size):
+        return max(1, round(size * scale[0]))
 
     def px(v):
         return v * scale[0]
@@ -1334,7 +1350,8 @@ def run_gui():
     # them into the calculator above.
     from tkinter import filedialog, messagebox, ttk
 
-    review = {"win": None, "run": 0}
+    review = {"win": None, "run": 0, "refit": None}
+    CELL_PAD = 16       # a table cell's inner padding plus a gap, at scale 1
     PAST = {"calls": "called", "folds": "folded", "raises": "raised"}
 
     def show_review_note(text):
@@ -1433,7 +1450,8 @@ def run_gui():
         run = review["run"]
 
         win = tk.Toplevel(root, bg=T["bg"], padx=16, pady=14)
-        review["win"] = win
+        review["win"], review["refit"] = win, None
+        win.bind("<Destroy>", lambda e: e.widget is win and review.update(refit=None))
         win.title(f"{APP_NAME} — review")
         summary = f"{source}  ·  {len(hands)} hands  ·  {len(spots)} spots facing a bet"
         currencies = {h.currency for h in hands}
@@ -1447,14 +1465,15 @@ def run_gui():
                       fg=T["slate"], fixed=True, anchor="w")
         tally.pack(fill="x", pady=(2, 10))
 
+        row_font, head_font = font(10), font(8, fixed=True)
         style = ttk.Style(win)
         style.theme_use("clam")
         style.configure("Review.Treeview", background=T["card"], fieldbackground=T["card"],
                         foreground=T["ink"], bordercolor=T["line"], lightcolor=T["card"],
-                        darkcolor=T["card"], font=font(10), rowheight=int(px(26)))
+                        darkcolor=T["card"], font=row_font)
         style.configure("Review.Treeview.Heading", background=T["bg"], foreground=T["slate"],
                         bordercolor=T["line"], lightcolor=T["bg"], darkcolor=T["bg"],
-                        relief="flat", font=font(8, fixed=True))
+                        relief="flat", font=head_font)
         style.map("Review.Treeview", background=[("selected", T["i-surface"])],
                   foreground=[("selected", T["ink"])])
         style.map("Review.Treeview.Heading", background=[("active", T["surface-hover"])])
@@ -1477,20 +1496,46 @@ def run_gui():
         tabs.add(spots_tab, text="Your spots")
         tabs.add(players_tab, text="Players")
 
-        def table(parent, columns, rows):
+        # Each column is as wide as the longest value it can hold, measured
+        # in the font it is drawn in; refit() measures again on every rescale.
+        fits = []
+
+        def refit():
+            style.configure("Review.Treeview", rowheight=int(px(26)))
+            for fit_one in fits:
+                fit_one()
+
+        def note(parent, text):
+            w = label(parent, text, 9, fg=T["slate"], anchor="w", justify="left")
+            w.pack(fill="x", padx=8, pady=8)
+            fits.append(lambda: w.configure(wraplength=int(px(900))))
+
+        def table(parent, headings, rows, later=None):
+            """A table of `rows`, the last column stretching. `later` holds every
+            value a column can be filled in with after it opens."""
+            later = later or {}
+            columns = [(key, title, later.get(key) or {row[i] for row in rows})
+                       for i, (key, title) in enumerate(headings)]
             box = tk.Frame(parent, bg=T["bg"])
             box.pack(fill="both", expand=True)
-            tree = ttk.Treeview(box, columns=[c for c, _, _ in columns], show="headings",
-                                style="Review.Treeview", height=min(16, max(rows, 1)),
+            tree = ttk.Treeview(box, columns=[c for c, _ in headings], show="headings",
+                                style="Review.Treeview", height=min(16, max(len(rows), 1)),
                                 selectmode="browse")
-            for key, title, width in columns:
+            for key, title, _values in columns:
                 tree.heading(key, text=title, anchor="w")
-                tree.column(key, width=int(px(width)), anchor="w", stretch=key == columns[-1][0])
+                tree.column(key, anchor="w", stretch=key == columns[-1][0])
+
+            def fit_table():
+                for key, title, values in columns:
+                    widest = max([head_font.measure(title), *map(row_font.measure, values)])
+                    tree.column(key, width=int(widest + px(CELL_PAD)))
+
+            fits.append(fit_table)
             bar = ttk.Scrollbar(box, orient="vertical", command=tree.yview,
                                 style="Review.Vertical.TScrollbar")
             tree.configure(yscrollcommand=bar.set)
+            bar.pack(side="right", fill="y")         # first, so a narrow window keeps it
             tree.pack(side="left", fill="both", expand=True)
-            bar.pack(side="right", fill="y")
             return tree
 
         # Players: everyone at your tables, read from every hand Breakeven has
@@ -1499,52 +1544,76 @@ def run_gui():
         here = {n for h in hands for n in h.players}
         heroes = {h.hero for h in hands}
         people = [p for p in player_stats(everyone) if p.name in here]
-        ptree = table(players_tab, [
-            ("name", "PLAYER", 140), ("hands", "HANDS", 55), ("vpip", "PLAYS", 55),
-            ("pfr", "RAISES", 60), ("af", "AGGRESSION", 85), ("style", "STYLE", 130),
-            ("read", "WHAT IT USUALLY MEANS", 300)], len(people))
-        ptree.tag_configure("few", foreground=T["slate"])
+        prows = []
         for p in people:
             style_word, read = player_style(p)
             af = ("—" if p.aggression is None else
                   "all bets" if p.aggression == float("inf") else f"{p.aggression:.1f}")
-            ptree.insert("", "end", values=(
-                p.name + ("  (you)" if p.name in heroes else ""), p.hands, f"{p.vpip:.0%}",
-                f"{p.pfr:.0%}", af, style_word, read),
-                tags=("few",) if p.hands < MIN_HANDS else ())
-        label(players_tab, "Plays: share of hands they put money in by choice. Raises: share "
-                           "they raised before the flop. Aggression: bets and raises per call "
-                           f"after the flop. Under {MIN_HANDS} hands, these are mostly noise. "
-                           "Only hands you played are counted, and nothing leaves your computer.",
-              9, fg=T["slate"], anchor="w", justify="left",
-              wraplength=int(px(900))).pack(fill="x", padx=8, pady=8)
+            prows.append((p.name + ("  (you)" if p.name in heroes else ""), str(p.hands),
+                          f"{p.vpip:.0%}", f"{p.pfr:.0%}", af, style_word, read))
+        ptree = table(players_tab, [
+            ("name", "PLAYER"), ("hands", "HANDS"), ("vpip", "PLAYS"), ("pfr", "RAISES"),
+            ("af", "AGGRESSION"), ("style", "STYLE"), ("read", "WHAT IT USUALLY MEANS")], prows)
+        ptree.tag_configure("few", foreground=T["slate"])
+        for row, p in zip(prows, people):
+            ptree.insert("", "end", values=row, tags=("few",) if p.hands < MIN_HANDS else ())
 
-        columns = [("hand", "HAND", 120), ("street", "STREET", 70), ("cards", "CARDS", 150),
-                   ("price", "CALL / POT", 120), ("need", "NEED", 60), ("equity", "EQUITY", 60),
-                   ("you", "YOU", 60), ("grade", "PRICE CHECK", 150)]
-        tree = table(spots_tab, columns, len(spots))
+        pending_reads = [None]
+
+        def fit_reads():
+            # The read column stretches to fill the window; only if the
+            # window is still too narrow does a read lose its end to "…".
+            pending_reads[0] = None
+            if not ptree.winfo_exists():
+                return
+            room = (ptree.winfo_width() - px(CELL_PAD)
+                    - sum(ptree.column(key, "width") for key in ptree["columns"][:-1]))
+            for iid, row in zip(ptree.get_children(), prows):
+                ptree.set(iid, "read", ellipsize(row[-1], row_font, room))
+
+        def queue_fit_reads(_e=None):
+            # After Tk has laid the table out, and once per burst of resizes.
+            if pending_reads[0] is None:
+                pending_reads[0] = ptree.after_idle(fit_reads)
+
+        fits.append(queue_fit_reads)
+        ptree.bind("<Configure>", queue_fit_reads)
+        note(players_tab, "Plays: share of hands they put money in by choice. Raises: share "
+                          "they raised before the flop. Aggression: bets and raises per call "
+                          f"after the flop. Under {MIN_HANDS} hands, these are mostly noise. "
+                          "Only hands you played are counted, and nothing leaves your computer.")
+
+        rows = []
+        for d in spots:
+            cards = "".join(map(card_label, d.hole))
+            if d.board:
+                cards += "  " + "".join(map(card_label, d.board))
+            rows.append((d.hand_id, d.street, cards,
+                         f"{format_amount(d.to_call)} / {format_amount(d.pot)}",
+                         f"{pot_odds(d.pot, d.to_call):.0%}", "…", PAST[d.action], ""))
+        # Equity and the price check arrive while grading: size them for
+        # anything they can say.
+        tree = table(spots_tab, [
+            ("hand", "HAND"), ("street", "STREET"), ("cards", "CARDS"), ("price", "CALL / POT"),
+            ("need", "NEED"), ("equity", "EQUITY"), ("you", "YOU"), ("grade", "PRICE CHECK")],
+            rows, later={"equity": ["100%"],
+                         "grade": {grade(action, eq, 0.5, river)[1] for action in PAST
+                                   for eq in (0, 1) for river in (False, True)}})
         # Only the spots worth a second look are washed; a priced-right row
         # stays neutral and says so in words.
         for state in ("danger", "attention"):
             tree.tag_configure(state, background=T[f"{state}-surface"])
-
-        for i, d in enumerate(spots):
-            cards = "".join(map(card_label, d.hole))
-            if d.board:
-                cards += "  " + "".join(map(card_label, d.board))
-            tree.insert("", "end", iid=str(i), values=(
-                d.hand_id, d.street, cards,
-                f"{format_amount(d.to_call)} / {format_amount(d.pot)}",
-                f"{pot_odds(d.pot, d.to_call):.0%}", "…", PAST[d.action], ""))
+        for i, row in enumerate(rows):
+            tree.insert("", "end", iid=str(i), values=row)
         tree.bind("<<TreeviewSelect>>",
                   lambda _e: tree.selection() and load_decision(spots[int(tree.selection()[0])]))
 
-        label(spots_tab, "Equity is against random hands and the price check uses pot odds "
-                         "alone, like the calculator. Select a row to load it into the "
-                         "calculator.",
-              9, fg=T["slate"], anchor="w", justify="left",
-              wraplength=int(px(900))).pack(fill="x", padx=8, pady=8)
+        note(spots_tab, "Equity is against random hands and the price check uses pot odds "
+                        "alone, like the calculator. Select a row to load it into the "
+                        "calculator.")
 
+        review["refit"] = refit
+        refit()
         counts = Counter()
 
         def graded(i, eq, state, word):
@@ -1575,7 +1644,9 @@ def run_gui():
 
     def apply_scale():
         for (size, _weight, _fixed), f in fonts.items():
-            f.configure(size=max(1, round(size * scale[0])))
+            f.configure(size=scaled_size(size))
+        if review["refit"]:
+            review["refit"]()
         draw_header_mark()
         slot_cv.configure(width=slot_xs()[1], height=px(SLOT_TOP + SH + 4))
         banner.configure(width=px(BW), height=px(BH))
