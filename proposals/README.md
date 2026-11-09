@@ -9,3 +9,4 @@ in [`decisions/`](../decisions/README.md).
 
 | Proposal | Status | Issue | Split into | ADR |
 |---|---|---|---|---|
+| [README screenshots in CI](readme-screenshots-in-ci.md) | accepted | #21 | #21 | [0004](../decisions/0004-readme-screenshots-refresh-pr.md) |
