@@ -1,7 +1,8 @@
 # Generate the README screenshots in CI
 
-Status: proposed
+Status: accepted
 Issue: #21
+ADR: [0004](../decisions/0004-readme-screenshots-refresh-pr.md)
 
 ## Problem
 
@@ -192,6 +193,10 @@ Because this changes CI, the build PR needs your merge, not the builder's.
 
 ## Decisions for Anthony
 
+**Decided by Anthony, 2026-11-09: 1C and 2A.** CI opens a refresh PR after a
+merge to `main`, and the calculator image shows K♠K♦ on T♥9♥4♣, two
+opponents, 30 into 60.
+
 ### 1. What CI does when the images change
 
 - **A. Auto-commit to the PR branch.** The job pushes regenerated images onto
@@ -205,7 +210,7 @@ Because this changes CI, the build PR needs your merge, not the builder's.
   builder downloads them, commits them, and pushes. Simple and visible, no
   bot commits, but it turns a red check into a manual chore on every UI PR,
   and a runner font change could fail an unrelated PR.
-- **C. Refresh PR after merge (recommended).** PRs only get a non-blocking
+- **C. Refresh PR after merge (recommended, chosen).** PRs only get a non-blocking
   job summary ("these images will change"). After a merge to `main`, if the
   images changed, the job opens (or updates) a single PR, "Refresh README
   screenshots", with the new images, using
@@ -219,7 +224,7 @@ Because this changes CI, the build PR needs your merge, not the builder's.
 
 ### 2. Which spot the calculator image shows
 
-- **A. K♠K♦ on T♥9♥4♣, two opponents, 30 into 60 (recommended).** Shows the
+- **A. K♠K♦ on T♥9♥4♣, two opponents, 30 into 60 (recommended, chosen).** Shows the
   verdict with all three marks: an out, helpers and danger cards.
 - **B. Keep A♥K♥ on Q♥7♥2♣, 20 into 60.** Matches the issue and today's image
   with its 15 green outs, but no danger cards.
