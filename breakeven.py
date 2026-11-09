@@ -176,7 +176,12 @@ def simulate_equity(hole, board, opponents, iterations=5000, rng=random):
     return share / iterations
 
 
-def next_card_equities(hole, board, opponents, iterations=600, rng=random,
+def spot_seed(hole, board, opponents):
+    """A seed fixed by the spot, so the same spot always simulates the same way."""
+    return f"{sorted(hole)}|{sorted(board)}|{opponents}"
+
+
+def next_card_equities(hole, board, opponents, iterations=1500, rng=random,
                        stop=lambda: False):
     """Equity with each possible next card dealt: {card: equity}.
 
@@ -1280,12 +1285,14 @@ def run_gui():
             return
 
         n_opps = opps.get()
+        # Shared by both simulations, so the verdict and the marks repeat together.
+        rng = random.Random(spot_seed(hole, board, n_opps))
         draw_banner("…", "neutral", "Simulating",
                     f"5,000 hands against {n_opps} random hand{'s' * (n_opps > 1)}")
 
         def work():
             try:
-                eq = simulate_equity(hole, board, n_opps)
+                eq = simulate_equity(hole, board, n_opps, rng=rng)
             except ValueError as e:
                 results.put(lambda: run_id[0] == me and draw_banner("CHECK", "attention", str(e)))
                 return
@@ -1304,7 +1311,8 @@ def run_gui():
                 return
 
             # Then try every possible next card, to light up the outs.
-            per_card = next_card_equities(hole, board, n_opps, stop=lambda: run_id[0] != me)
+            per_card = next_card_equities(hole, board, n_opps, rng=rng,
+                                          stop=lambda: run_id[0] != me)
 
             def marked():
                 if run_id[0] != me or not per_card:
