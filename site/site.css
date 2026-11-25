@@ -1,0 +1,33 @@
+/* The few rules product-page.css lacks. Tokens only: no hex, rgb or hsl. */
+
+@font-face { font-family: 'Geist'; font-style: normal; font-display: swap; font-weight: 100 900;
+  src: url('https://cdn.jsdelivr.net/npm/@fontsource-variable/geist@5.3.0/files/geist-latin-wght-normal.woff2') format('woff2'); }
+@font-face { font-family: 'IBM Plex Mono'; font-style: normal; font-display: swap; font-weight: 400;
+  src: url('https://cdn.jsdelivr.net/npm/@fontsource/ibm-plex-mono@5.3.0/files/ibm-plex-mono-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'IBM Plex Mono'; font-style: normal; font-display: swap; font-weight: 500;
+  src: url('https://cdn.jsdelivr.net/npm/@fontsource/ibm-plex-mono@5.3.0/files/ibm-plex-mono-latin-500-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Silkscreen'; font-style: normal; font-display: swap; font-weight: 400;
+  src: url('https://cdn.jsdelivr.net/npm/@fontsource/silkscreen@5.3.0/files/silkscreen-latin-400-normal.woff2') format('woff2'); }
+
+/* The one place Silkscreen is used. */
+.wordmark { font-family: var(--display); letter-spacing: 0.04em; }
+
+/* Hero screenshot is tall; keep it from dominating a wide screen. */
+.pp-media > picture > img { display: block; width: 100%; height: auto; max-height: 640px; object-fit: contain; }
+
+/* The FAQ and the unsigned-app help. */
+.faq { border-top: 1px solid var(--line); }
+.faq details, .faq-inline { border-bottom: 1px solid var(--line); padding: var(--space-4) 0; }
+.faq-inline { border-top: 1px solid var(--line); margin-top: var(--space-5); }
+.faq summary, .faq-inline summary { cursor: pointer; font-weight: var(--weight-semibold); color: var(--ink); }
+.faq summary:focus-visible, .faq-inline summary:focus-visible { outline: 2px solid var(--action-ink); outline-offset: 4px; }
+.faq details p, .faq-inline p, .faq-inline ul { margin: var(--space-3) 0 0; color: var(--ink-soft); max-width: 62ch; }
+.faq-inline ul { padding-left: var(--space-5); }
+
+/* The download panel: two equal buttons, stacked. */
+.pp-actions.stacked { flex-direction: column; align-items: stretch; margin: 0; }
+.pp-actions.stacked .pp-button { justify-content: center; text-align: center; }
+
+/* product-page.css styles `.pp-figure > img`; ours sit inside <picture>. */
+.pp-figure picture, .pp-figure img { display: block; width: 100%; height: auto; }
+.pp-figure img { border-radius: var(--radius-lg); border: 1px solid var(--line); box-shadow: var(--shadow-2); }

@@ -1,0 +1,17 @@
+name: ui-check
+
+# The fleet UX gate for the product page (axe at mobile and desktop, light and dark).
+on:
+  pull_request:
+    paths: ["site/**", "scripts/build-site.sh", "docs/images/**", ".github/workflows/ui-check.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  ui:
+    uses: brignano/ai-tools/.github/workflows/ui-check.yml@main
+    with:
+      install: "true"
+      build: sh scripts/build-site.sh
+      serve: npx --yes serve -l 4173 _site
