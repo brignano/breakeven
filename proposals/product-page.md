@@ -1,6 +1,6 @@
 # Product page at breakeven.brignano.io
 
-Status: accepted
+Status: building
 Issue: #24
 ADR: [0005](../decisions/0005-product-page-hosting-and-layout.md)
 

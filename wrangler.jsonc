@@ -1,0 +1,22 @@
+// Hosts the product page (site/, built into _site/ by scripts/build-site.sh) as
+// a static-assets Worker. No Worker code. Workers Builds (connected in the
+// Cloudflare dashboard) deploys main and builds a preview per PR.
+//   build command:   sh scripts/build-site.sh
+//   deploy command:  npx wrangler deploy
+//   preview command: npx wrangler preview
+//
+// Access, by hostname (most specific rule wins):
+//   breakeven.brignano.io — public: a hostname Access app with Bypass / Everyone.
+//   *.workers.dev         — production and PR previews stay private behind the
+//                           account-wide `Me` floor. Never attach a Worker-level
+//                           bypass: it would open the previews too.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "breakeven",
+  "compatibility_date": "2026-11-24",
+  "assets": { "directory": "_site", "not_found_handling": "404-page" },
+  "workers_dev": true,
+  "preview_urls": true,
+  // Required by `npx wrangler preview` (the Workers Builds preview command).
+  "previews": {}
+}

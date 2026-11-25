@@ -7,7 +7,8 @@
 **Know the price of every call.**
 
 A free pot odds and equity calculator for Texas Hold'em that also reviews your PokerStars sessions.<br>
-Enter the pot and the bet and it tells you, instantly, whether calling pays.
+Enter the pot and the bet and it tells you, instantly, whether calling pays.<br>
+[breakeven.brignano.io](https://breakeven.brignano.io)
 
 [![Latest release](https://img.shields.io/github/v/release/brignano/breakeven?label=release)](https://github.com/brignano/breakeven/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/brignano/breakeven/total)](https://github.com/brignano/breakeven/releases)
@@ -117,6 +118,10 @@ Colours, type and the mark follow [brignano/design](https://github.com/brignano/
 ### Releasing
 
 In the Actions tab, open **build**, click **Run workflow**, and enter a version such as `v0.2.0`. You can also push a tag with that name. Either way, GitHub Actions runs the tests, builds the Windows and Mac apps with PyInstaller, and attaches both zips to a release. Every push to `main` also builds them, and you can download those builds from the Actions run.
+
+### Product page
+
+`site/` is the plain HTML and CSS behind [breakeven.brignano.io](https://breakeven.brignano.io), styled only from the design system tokens. `scripts/build-site.sh` assembles it into `_site/` with the screenshots from `docs/images/`, and a Cloudflare Worker (see `wrangler.jsonc`) serves that. Run it locally with `sh scripts/build-site.sh && npx --yes serve _site`. It repeats the README's pitch, so change both together.
 
 ### Docs
 

@@ -36,6 +36,12 @@ jobs:
         run: >
           curl -fsSL "https://cdn.jsdelivr.net/gh/brignano/design@${DESIGN_TOKENS}/tokens.css"
           | diff -u - assets/tokens.css
+      - name: Product page uses the pinned design release
+        run: |
+          bad=$(grep -oh 'brignano/design@[^/]*' site/*.html | grep -v "^brignano/design@${DESIGN_TOKENS}$" || true)
+          test -z "$bad" || { echo "site/ pins a different design release: $bad"; exit 1; }
+      - name: No literal colours in the product page
+        run: "! grep -nEi '#[0-9a-f]{3,8}\\b|rgba?\\(|hsla?\\(' site/*.html site/*.css"
 
   build:
     needs: test
